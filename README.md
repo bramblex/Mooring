@@ -2,6 +2,8 @@
 
 Vue 3 + Vite + TypeScript Chrome extension for managing tabs and tab groups from a side panel.
 
+详见 [窗口、Workspace 与标签页模型](docs/workspace-model.md)。
+
 ## Scripts
 
 ```sh

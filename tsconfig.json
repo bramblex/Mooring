@@ -14,5 +14,5 @@
     "jsx": "preserve",
     "types": ["chrome", "node"]
   },
-  "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue", "vite.config.ts"]
 }

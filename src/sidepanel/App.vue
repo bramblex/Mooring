@@ -67,6 +67,7 @@ const GROUP_COLOR_STYLES: Record<TabGroupColor, Record<string, string>> = {
 const tabs = ref<chrome.tabs.Tab[]>([]);
 const groups = ref<chrome.tabGroups.TabGroup[]>([]);
 const draggedTabId = ref<number | null>(null);
+const draggedGroupId = ref<number | null>(null);
 const dragOverKey = ref("");
 
 function tabTitle(tab: chrome.tabs.Tab) {
@@ -132,6 +133,10 @@ async function moveTabToGroup(tabId: number, groupId: number, index: number) {
   await chrome.tabs.group({ tabIds: tabId, groupId });
 }
 
+async function moveGroupToIndex(groupId: number, index: number) {
+  await chrome.tabGroups.move(groupId, { index });
+}
+
 async function groupActiveTab() {
   const [activeTab] = await chrome.tabs.query({
     active: true,
@@ -149,14 +154,30 @@ function onDragStart(tab: chrome.tabs.Tab, event: DragEvent) {
   if (!tab.id || !event.dataTransfer) return;
 
   draggedTabId.value = tab.id;
+  draggedGroupId.value = null;
   event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", String(tab.id));
+  event.dataTransfer.setData("text/plain", `tab:${tab.id}`);
+}
+
+function onGroupDragStart(group: chrome.tabGroups.TabGroup, event: DragEvent) {
+  if (!event.dataTransfer) return;
+
+  draggedGroupId.value = group.id;
+  draggedTabId.value = null;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", `group:${group.id}`);
 }
 
 function onDragOver(key: string, event: DragEvent) {
   event.preventDefault();
   event.stopPropagation();
   dragOverKey.value = key;
+}
+
+function onTabDragOver(key: string, event: DragEvent) {
+  if (draggedGroupId.value !== null) return;
+
+  onDragOver(key, event);
 }
 
 function onDragLeave(key: string) {
@@ -177,8 +198,45 @@ async function onDrop(groupId: number, index: number, event: DragEvent) {
   await refreshTabs();
 }
 
+function getTabDropIndex(targetTab: chrome.tabs.Tab, event: DragEvent) {
+  const draggedTab = tabs.value.find((tab) => tab.id === draggedTabId.value);
+  const target = event.currentTarget as HTMLElement;
+  const rect = target.getBoundingClientRect();
+  const shouldInsertAfter = event.clientY > rect.top + rect.height / 2;
+
+  if (!draggedTab || draggedTab.index === targetTab.index) {
+    return targetTab.index;
+  }
+
+  if (shouldInsertAfter) {
+    return draggedTab.index < targetTab.index ? targetTab.index : targetTab.index + 1;
+  }
+
+  return draggedTab.index < targetTab.index ? targetTab.index - 1 : targetTab.index;
+}
+
+async function onTabDrop(targetTab: chrome.tabs.Tab, event: DragEvent) {
+  if (draggedGroupId.value !== null) return;
+
+  await onDrop(targetTab.groupId, getTabDropIndex(targetTab, event), event);
+}
+
+async function onGroupDrop(targetGroup: chrome.tabGroups.TabGroup, event: DragEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (draggedGroupId.value === null || draggedGroupId.value === targetGroup.id) return;
+
+  const targetIndex = groupStartIndex(targetGroup, tabsByGroup.value);
+  await moveGroupToIndex(draggedGroupId.value, targetIndex);
+  draggedGroupId.value = null;
+  dragOverKey.value = "";
+  await refreshTabs();
+}
+
 function onDragEnd() {
   draggedTabId.value = null;
+  draggedGroupId.value = null;
   dragOverKey.value = "";
 }
 
@@ -266,9 +324,9 @@ onMounted(() => {
             }"
             draggable="true"
             @dragstart="onDragStart(tab, $event)"
-            @dragover="onDragOver(`tab-${tab.id}`, $event)"
+            @dragover="onTabDragOver(`tab-${tab.id}`, $event)"
             @dragleave="onDragLeave(`tab-${tab.id}`)"
-            @drop="onDrop(tab.groupId, tab.index, $event)"
+            @drop="onTabDrop(tab, $event)"
             @dragend="onDragEnd"
           >
             <span class="drag-handle" aria-hidden="true">:::</span>
@@ -288,13 +346,26 @@ onMounted(() => {
         v-for="group in sortedGroups"
         :key="group.id"
         class="group-section"
-        :class="{ 'drag-over': dragOverKey === `group-${group.id}` }"
+        :class="{
+          dragging: draggedGroupId === group.id,
+          'drag-over': dragOverKey === `group-${group.id}`,
+        }"
         :style="groupColorStyle(group.color)"
         @dragover="onDragOver(`group-${group.id}`, $event)"
         @dragleave="onDragLeave(`group-${group.id}`)"
-        @drop="onDrop(group.id, -1, $event)"
+        @drop="draggedGroupId === null ? onDrop(group.id, -1, $event) : onGroupDrop(group, $event)"
       >
         <div class="group-header">
+          <span
+            class="group-drag-handle"
+            draggable="true"
+            title="Drag group"
+            aria-label="Drag group"
+            @dragstart="onGroupDragStart(group, $event)"
+            @dragend="onDragEnd"
+          >
+            :::
+          </span>
           <input
             class="group-title"
             :value="groupTitle(group)"
@@ -335,9 +406,9 @@ onMounted(() => {
             }"
             draggable="true"
             @dragstart="onDragStart(tab, $event)"
-            @dragover="onDragOver(`tab-${tab.id}`, $event)"
+            @dragover="onTabDragOver(`tab-${tab.id}`, $event)"
             @dragleave="onDragLeave(`tab-${tab.id}`)"
-            @drop="onDrop(tab.groupId, tab.index, $event)"
+            @drop="onTabDrop(tab, $event)"
             @dragend="onDragEnd"
           >
             <span class="drag-handle" aria-hidden="true">:::</span>
