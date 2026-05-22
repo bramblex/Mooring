@@ -1,11 +1,21 @@
-# Hello World Side Panel Chrome Extension
+# Chrome Side Panel Tabs
 
-Minimal Manifest V3 Chrome extension that opens a side panel when the extension action is clicked.
+Vue 3 + Vite + TypeScript Chrome extension for managing tabs and tab groups from a side panel.
+
+## Scripts
+
+```sh
+npm install
+npm run build
+```
 
 ## Load locally
 
-1. Open `chrome://extensions`.
-2. Enable **Developer mode**.
-3. Click **Load unpacked**.
-4. Select this folder: `/Users/brambles/Workspace/chrome-workspace`.
-5. Click the extension icon to open the side panel.
+1. Run `npm run build`.
+2. Open `chrome://extensions`.
+3. Enable **Developer mode**.
+4. Click **Load unpacked**.
+5. Select `/Users/brambles/Workspace/chrome-workspace/dist`.
+6. Click the extension icon or press `Command+Shift+Y` to open the side panel.
+
+The Vue template is compiled during `npm run build`, so the Chrome extension runtime does not need `unsafe-eval`.

@@ -1,0 +1,24 @@
+{
+  "name": "chrome-workspace",
+  "version": "1.0.0",
+  "description": "Vue 3 Chrome side panel extension for tab and tab group management.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/chrome": "^0.1.42",
+    "@types/node": "^25.9.1",
+    "@vitejs/plugin-vue": "^6.0.7",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.14",
+    "vue": "^3.5.34",
+    "vue-tsc": "^3.3.1"
+  }
+}

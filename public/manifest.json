@@ -3,7 +3,7 @@
   "name": "Hello World Side Panel",
   "description": "Manage tabs from a Chrome side panel.",
   "version": "0.1.0",
-  "permissions": ["sidePanel", "tabs"],
+  "permissions": ["sidePanel", "tabs", "tabGroups"],
   "action": {
     "default_title": "Open side panel"
   },
@@ -17,7 +17,8 @@
     }
   },
   "background": {
-    "service_worker": "service-worker.js"
+    "service_worker": "assets/serviceWorker.js",
+    "type": "module"
   },
   "side_panel": {
     "default_path": "sidepanel.html"
