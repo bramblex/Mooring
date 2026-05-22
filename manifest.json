@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Hello World Side Panel",
+  "description": "Manage tabs from a Chrome side panel.",
+  "version": "0.1.0",
+  "permissions": ["sidePanel", "tabs"],
+  "action": {
+    "default_title": "Open side panel"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "Open the side panel"
+    }
+  },
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  }
+}
