@@ -13,10 +13,9 @@ import {
 } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "../i18n";
+import type { TabModel } from "../models/tab.model";
 import type { WindowContext } from "../models/window.model";
-
-const NO_GROUP = chrome.tabGroups.TAB_GROUP_ID_NONE;
-type TabGroupColor = chrome.tabGroups.TabGroup["color"];
+import type { TabGroupColor, WorkspaceState, WorkspaceView } from "../models/workspace.model";
 
 const GROUP_COLORS: TabGroupColor[] = [
   "grey",
@@ -78,42 +77,34 @@ const GROUP_COLOR_STYLES: Record<TabGroupColor, Record<string, string>> = {
   },
 };
 
-const tabs = ref<chrome.tabs.Tab[]>([]);
-const groups = ref<chrome.tabGroups.TabGroup[]>([]);
+const workspaceState = ref<WorkspaceState>({
+  workspaces: [],
+  ungroupedTabs: [],
+});
 const draggedTabId = ref<number | null>(null);
-const draggedGroupId = ref<number | null>(null);
+const draggedWorkspaceId = ref<string | null>(null);
 const dragOverKey = ref("");
-const openColorPickerGroupId = ref<number | null>(null);
+const openColorPickerGroupId = ref<string | null>(null);
 const windowContext = ref<WindowContext | null>(null);
+const currentWindowId = ref<number | undefined>();
 const { t } = useI18n();
 
 const isPrimaryWindow = computed(() => windowContext.value?.role === "primary");
 const isWindowContextReady = computed(() => Boolean(windowContext.value));
+const workspaces = computed(() =>
+  [...workspaceState.value.workspaces].sort((a, b) => a.order - b.order),
+);
 
-function tabTitle(tab: chrome.tabs.Tab) {
+function tabTitle(tab: TabModel) {
   return tab.title || tab.url || t("untitledTab");
 }
 
-function tabSubtitle(tab: chrome.tabs.Tab) {
-  if (!isDirtyPinnedTab(tab)) return "";
-
-  return tab.title || "";
+function tabSubtitle(tab: TabModel) {
+  return tab.dirty ? tab.currentTitle || tab.url || "" : "";
 }
 
-function tabFavicon(tab: chrome.tabs.Tab) {
+function tabFavicon(tab: TabModel) {
   return tab.favIconUrl || "";
-}
-
-function isPinnedTab(_tab: chrome.tabs.Tab) {
-  return false;
-}
-
-function isDirtyPinnedTab(_tab: chrome.tabs.Tab) {
-  return false;
-}
-
-function groupTitle(group: chrome.tabGroups.TabGroup) {
-  return group.title || t("untitledGroup");
 }
 
 function groupColorStyle(color: TabGroupColor) {
@@ -126,54 +117,38 @@ function isEditableElement(target: EventTarget | null) {
   return Boolean(target.closest("input, textarea, [contenteditable='true']"));
 }
 
-function groupTabsByGroupId(openTabs: chrome.tabs.Tab[]) {
-  const tabsByGroup = new Map<number, chrome.tabs.Tab[]>();
-
-  openTabs.forEach((tab) => {
-    const groupTabs = tabsByGroup.get(tab.groupId) || [];
-    groupTabs.push(tab);
-    tabsByGroup.set(tab.groupId, groupTabs);
-  });
-
-  return tabsByGroup;
+async function sendMessage<T>(message: Record<string, unknown>) {
+  return chrome.runtime.sendMessage(message) as Promise<T>;
 }
-
-function groupStartIndex(
-  group: chrome.tabGroups.TabGroup,
-  tabsByGroup: Map<number, chrome.tabs.Tab[]>,
-) {
-  return tabsByGroup.get(group.id)?.[0]?.index ?? Number.MAX_SAFE_INTEGER;
-}
-
-const tabsByGroup = computed(() => groupTabsByGroupId(tabs.value));
-
-const sortedGroups = computed(() =>
-  [...groups.value].sort(
-    (a, b) => groupStartIndex(a, tabsByGroup.value) - groupStartIndex(b, tabsByGroup.value),
-  ),
-);
 
 async function refreshTabs() {
-  if (!isPrimaryWindow.value) return;
+  if (!isPrimaryWindow.value || currentWindowId.value === undefined) return;
 
-  tabs.value = await chrome.tabs.query({ currentWindow: true });
-  const windowId = tabs.value[0]?.windowId;
-  groups.value = windowId ? await chrome.tabGroups.query({ windowId }) : [];
+  workspaceState.value = await sendMessage<WorkspaceState>({
+    type: "GET_WORKSPACE_STATE",
+    windowId: currentWindowId.value,
+  });
 }
 
 async function refreshWindowContext() {
   const currentWindow = await chrome.windows.getCurrent();
+  currentWindowId.value = currentWindow.id;
   windowContext.value = await chrome.runtime.sendMessage({
     type: "GET_WINDOW_CONTEXT",
     windowId: currentWindow.id,
   });
 }
 
+async function refreshAll() {
+  await refreshWindowContext();
+  await refreshTabs();
+}
+
 async function openMainWindowFromPanel() {
   await chrome.runtime.sendMessage({
     type: "OPEN_MAIN_WINDOW",
   });
-  await refreshWindowContext();
+  await refreshAll();
 }
 
 async function sendCurrentTabFromPanel() {
@@ -182,7 +157,7 @@ async function sendCurrentTabFromPanel() {
     type: "SEND_CURRENT_TAB_TO_MAIN_WINDOW",
     windowId: currentWindow.id,
   });
-  await refreshWindowContext();
+  await refreshAll();
 }
 
 async function sendAllTabsFromPanel() {
@@ -191,80 +166,119 @@ async function sendAllTabsFromPanel() {
     type: "SEND_ALL_TABS_TO_MAIN_WINDOW",
     windowId: currentWindow.id,
   });
-  await refreshWindowContext();
+  await refreshAll();
 }
 
-async function activateTab(tabId?: number) {
-  if (!tabId) return;
+async function createWorkspace() {
+  if (currentWindowId.value === undefined) return;
 
-  await chrome.tabs.update(tabId, { active: true });
+  await sendMessage({ type: "CREATE_WORKSPACE", windowId: currentWindowId.value });
   await refreshTabs();
 }
 
-async function moveTabToGroup(tabId: number, groupId: number, index: number) {
-  await chrome.tabs.move(tabId, { index });
-
-  if (groupId === NO_GROUP) {
-    await chrome.tabs.ungroup(tabId);
+async function openWorkspaceTab(workspace: WorkspaceView | null, tab: TabModel) {
+  if (!workspace || currentWindowId.value === undefined) {
+    if (tab.tabId) await chrome.tabs.update(tab.tabId, { active: true });
     return;
   }
 
-  await chrome.tabs.group({ tabIds: tabId, groupId });
-}
-
-async function moveGroupToIndex(groupId: number, index: number) {
-  await chrome.tabGroups.move(groupId, { index });
-}
-
-async function groupActiveTab() {
-  const [activeTab] = await chrome.tabs.query({
-    active: true,
-    currentWindow: true,
+  await sendMessage({
+    type: "OPEN_WORKSPACE_TAB",
+    workspaceId: workspace.id,
+    tabId: tab.id,
+    windowId: currentWindowId.value,
   });
-
-  if (!activeTab?.id) return;
-
-  const groupId = await chrome.tabs.group({ tabIds: activeTab.id });
-  await chrome.tabGroups.update(groupId, { title: t("newGroup") });
   await refreshTabs();
 }
 
-function createWorkspacePlaceholder() {
-  console.info("Creating a bookmark-backed workspace is documented but not implemented yet.");
+async function updateWorkspaceTitle(workspace: WorkspaceView, event: Event) {
+  const target = event.target as HTMLInputElement;
+
+  await sendMessage({
+    type: "RENAME_WORKSPACE",
+    workspaceId: workspace.id,
+    name: target.value.trim() || t("untitledGroup"),
+  });
+  await refreshTabs();
 }
 
-function togglePinnedTabPlaceholder(tab: chrome.tabs.Tab) {
-  if (isPinnedTab(tab) && !window.confirm(t("unpinTabConfirm"))) return;
-
-  console.info("Pinning workspace tabs is documented but not implemented yet.", tab.id);
+async function updateWorkspaceColor(workspace: WorkspaceView, color: TabGroupColor) {
+  await sendMessage({
+    type: "UPDATE_WORKSPACE_COLOR",
+    workspaceId: workspace.id,
+    color,
+  });
+  openColorPickerGroupId.value = null;
+  await refreshTabs();
 }
 
-function closeTabPlaceholder(tab: chrome.tabs.Tab) {
-  console.info("Closing tabs from Harbor is documented but not implemented yet.", tab.id);
+async function toggleWorkspace(workspace: WorkspaceView) {
+  await sendMessage({
+    type: "TOGGLE_WORKSPACE",
+    workspaceId: workspace.id,
+  });
+  await refreshTabs();
 }
 
-function deleteWorkspacePlaceholder(group: chrome.tabGroups.TabGroup) {
+async function deleteWorkspace(workspace: WorkspaceView) {
   if (!window.confirm(t("deleteWorkspaceConfirm"))) return;
 
-  console.info("Deleting bookmark-backed workspaces is documented but not implemented yet.", group.id);
+  await sendMessage({
+    type: "DELETE_WORKSPACE",
+    workspaceId: workspace.id,
+  });
+  await refreshTabs();
 }
 
-function onDragStart(tab: chrome.tabs.Tab, event: DragEvent) {
-  if (!tab.id || !event.dataTransfer) return;
+async function togglePinnedTab(workspace: WorkspaceView | null, tab: TabModel) {
+  if (tab.pinned) {
+    if (!window.confirm(t("unpinTabConfirm"))) return;
 
-  draggedTabId.value = tab.id;
-  draggedGroupId.value = null;
+    await sendMessage({
+      type: "UNPIN_TAB",
+      tabId: tab.tabId,
+      bookmarkId: tab.bookmarkId,
+    });
+    await refreshTabs();
+    return;
+  }
+
+  if (!workspace || !tab.tabId) return;
+
+  await sendMessage({
+    type: "PIN_TAB",
+    workspaceId: workspace.id,
+    tabId: tab.tabId,
+  });
+  await refreshTabs();
+}
+
+async function closeWorkspaceTab(tab: TabModel) {
+  if (!tab.tabId) return;
+
+  await sendMessage({
+    type: "CLOSE_WORKSPACE_TAB",
+    tabId: tab.tabId,
+  });
+  await refreshTabs();
+}
+
+function onTabDragStart(tab: TabModel, event: DragEvent) {
+  if (!tab.tabId || !event.dataTransfer) return;
+
+  draggedTabId.value = tab.tabId;
+  draggedWorkspaceId.value = null;
   event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", `tab:${tab.id}`);
+  event.dataTransfer.setData("text/plain", `tab:${tab.tabId}`);
 }
 
-function onGroupDragStart(group: chrome.tabGroups.TabGroup, event: DragEvent) {
+function onWorkspaceDragStart(workspace: WorkspaceView, event: DragEvent) {
   if (!event.dataTransfer) return;
 
-  draggedGroupId.value = group.id;
+  draggedWorkspaceId.value = workspace.id;
   draggedTabId.value = null;
   event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", `group:${group.id}`);
+  event.dataTransfer.setData("text/plain", `workspace:${workspace.id}`);
 }
 
 function onDragOver(key: string, event: DragEvent) {
@@ -274,7 +288,7 @@ function onDragOver(key: string, event: DragEvent) {
 }
 
 function onTabDragOver(key: string, event: DragEvent) {
-  if (draggedGroupId.value !== null) return;
+  if (draggedWorkspaceId.value !== null) return;
 
   onDragOver(key, event);
 }
@@ -285,102 +299,64 @@ function onDragLeave(key: string) {
   }
 }
 
-async function onDrop(groupId: number, index: number, event: DragEvent) {
+async function onDrop(workspaceId: string | null, index: number, event: DragEvent) {
   event.preventDefault();
   event.stopPropagation();
 
-  if (draggedTabId.value === null) return;
+  if (draggedTabId.value === null || currentWindowId.value === undefined) return;
 
-  await moveTabToGroup(draggedTabId.value, groupId, index);
-  draggedTabId.value = null;
-  dragOverKey.value = "";
+  await sendMessage({
+    type: "MOVE_WORKSPACE_TAB",
+    tabId: draggedTabId.value,
+    workspaceId,
+    index,
+    windowId: currentWindowId.value,
+  });
+  onDragEnd();
   await refreshTabs();
 }
 
-function getTabDropIndex(targetTab: chrome.tabs.Tab, event: DragEvent) {
-  const draggedTab = tabs.value.find((tab) => tab.id === draggedTabId.value);
+function getTabDropIndex(targetTab: TabModel, event: DragEvent) {
   const target = event.currentTarget as HTMLElement;
   const rect = target.getBoundingClientRect();
   const shouldInsertAfter = event.clientY > rect.top + rect.height / 2;
 
-  if (!draggedTab || draggedTab.index === targetTab.index) {
-    return targetTab.index;
-  }
-
-  if (shouldInsertAfter) {
-    return draggedTab.index < targetTab.index ? targetTab.index : targetTab.index + 1;
-  }
-
-  return draggedTab.index < targetTab.index ? targetTab.index - 1 : targetTab.index;
+  return shouldInsertAfter ? targetTab.index + 1 : targetTab.index;
 }
 
-async function onTabDrop(targetTab: chrome.tabs.Tab, event: DragEvent) {
-  if (draggedGroupId.value !== null) return;
+async function onTabDrop(workspaceId: string | null, targetTab: TabModel, event: DragEvent) {
+  if (draggedWorkspaceId.value !== null) return;
 
-  await onDrop(targetTab.groupId, getTabDropIndex(targetTab, event), event);
+  await onDrop(workspaceId, getTabDropIndex(targetTab, event), event);
 }
 
-async function onGroupDrop(targetGroup: chrome.tabGroups.TabGroup, event: DragEvent) {
+async function onWorkspaceDrop(targetWorkspace: WorkspaceView, event: DragEvent) {
   event.preventDefault();
   event.stopPropagation();
 
-  if (draggedGroupId.value === null || draggedGroupId.value === targetGroup.id) return;
+  if (draggedWorkspaceId.value === null || draggedWorkspaceId.value === targetWorkspace.id) return;
 
-  const targetIndex = groupStartIndex(targetGroup, tabsByGroup.value);
-  await moveGroupToIndex(draggedGroupId.value, targetIndex);
-  draggedGroupId.value = null;
-  dragOverKey.value = "";
+  await sendMessage({
+    type: "MOVE_WORKSPACE",
+    sourceWorkspaceId: draggedWorkspaceId.value,
+    targetWorkspaceId: targetWorkspace.id,
+  });
+  onDragEnd();
   await refreshTabs();
 }
 
 function onDragEnd() {
   draggedTabId.value = null;
-  draggedGroupId.value = null;
+  draggedWorkspaceId.value = null;
   dragOverKey.value = "";
 }
 
-async function updateGroupTitle(group: chrome.tabGroups.TabGroup, event: Event) {
-  const target = event.target as HTMLInputElement;
-
-  await chrome.tabGroups.update(group.id, {
-    title: target.value.trim() || t("untitledGroup"),
-  });
-  await refreshTabs();
-}
-
-async function updateGroupColor(group: chrome.tabGroups.TabGroup, color: TabGroupColor) {
-  await chrome.tabGroups.update(group.id, {
-    color,
-  });
-  openColorPickerGroupId.value = null;
-  await refreshTabs();
-}
-
-async function toggleGroup(group: chrome.tabGroups.TabGroup) {
-  await chrome.tabGroups.update(group.id, { collapsed: !group.collapsed });
-  await refreshTabs();
-}
-
-async function ungroupTabs(group: chrome.tabGroups.TabGroup) {
-  const groupTabs = await chrome.tabs.query({
-    groupId: group.id,
-    currentWindow: true,
-  });
-  const tabIds = groupTabs.flatMap((tab) => (tab.id ? [tab.id] : []));
-
-  if (tabIds.length === 0) return;
-
-  await chrome.tabs.ungroup(tabIds as [number, ...number[]]);
-  await refreshTabs();
-}
-
-function toggleColorPicker(groupId: number) {
+function toggleColorPicker(groupId: string) {
   openColorPickerGroupId.value = openColorPickerGroupId.value === groupId ? null : groupId;
 }
 
 onMounted(async () => {
-  await refreshWindowContext();
-  await refreshTabs();
+  await refreshAll();
 
   document.addEventListener("contextmenu", (event) => {
     if (isEditableElement(event.target)) return;
@@ -456,7 +432,7 @@ onMounted(async () => {
           type="button"
           :title="t('newWorkspace')"
           :aria-label="t('newWorkspace')"
-          @click="createWorkspacePlaceholder"
+          @click="createWorkspace"
         >
           <Plus :size="18" aria-hidden="true" />
         </button>
@@ -475,29 +451,29 @@ onMounted(async () => {
     <section class="groups" :aria-label="t('openTabs')">
       <section
         class="group-section ungrouped"
-        :class="{ 'drag-over': dragOverKey === 'group-ungrouped' }"
-        @dragover="onDragOver('group-ungrouped', $event)"
-        @dragleave="onDragLeave('group-ungrouped')"
-        @drop="onDrop(NO_GROUP, -1, $event)"
+        :class="{ 'drag-over': dragOverKey === 'workspace-ungrouped' }"
+        @dragover="onDragOver('workspace-ungrouped', $event)"
+        @dragleave="onDragLeave('workspace-ungrouped')"
+        @drop="onDrop(null, -1, $event)"
       >
         <div class="group-header">
           <h2>{{ t("ungrouped") }}</h2>
         </div>
         <ol class="tabs">
           <li
-            v-for="tab in tabsByGroup.get(NO_GROUP) || []"
+            v-for="tab in workspaceState.ungroupedTabs"
             :key="tab.id"
             class="tab"
             :class="{
               active: tab.active,
-              dragging: draggedTabId === tab.id,
+              dragging: draggedTabId === tab.tabId,
               'drag-over': dragOverKey === `tab-${tab.id}`,
             }"
-            draggable="true"
-            @dragstart="onDragStart(tab, $event)"
+            :draggable="Boolean(tab.tabId)"
+            @dragstart="onTabDragStart(tab, $event)"
             @dragover="onTabDragOver(`tab-${tab.id}`, $event)"
             @dragleave="onDragLeave(`tab-${tab.id}`)"
-            @drop="onTabDrop(tab, $event)"
+            @drop="onTabDrop(null, tab, $event)"
             @dragend="onDragEnd"
           >
             <span class="drag-handle" aria-hidden="true">
@@ -511,39 +487,17 @@ onMounted(async () => {
               class="tab-title-button"
               type="button"
               :title="tabTitle(tab)"
-              @click="activateTab(tab.id)"
+              @click="openWorkspaceTab(null, tab)"
             >
-              <span class="tab-title">
-                {{ tabTitle(tab) }}
-                <span v-if="tabSubtitle(tab)" class="tab-subtitle">
-                  · {{ tabSubtitle(tab) }}
-                </span>
-              </span>
+              <span class="tab-title">{{ tabTitle(tab) }}</span>
             </button>
             <div class="tab-actions">
-              <Circle
-                v-if="isDirtyPinnedTab(tab)"
-                class="dirty-dot"
-                :size="9"
-                :title="t('pinnedTabDirty')"
-                :aria-label="t('pinnedTabDirty')"
-              />
-              <button
-                class="icon-button subtle"
-                type="button"
-                :class="{ active: isPinnedTab(tab) }"
-                :title="isPinnedTab(tab) ? t('unpinTab') : t('pinTab')"
-                :aria-label="isPinnedTab(tab) ? t('unpinTab') : t('pinTab')"
-                @click.stop="togglePinnedTabPlaceholder(tab)"
-              >
-                <Star :size="16" aria-hidden="true" />
-              </button>
               <button
                 class="icon-button subtle"
                 type="button"
                 :title="t('closeTab')"
                 :aria-label="t('closeTab')"
-                @click.stop="closeTabPlaceholder(tab)"
+                @click.stop="closeWorkspaceTab(tab)"
               >
                 <X :size="16" aria-hidden="true" />
               </button>
@@ -553,17 +507,17 @@ onMounted(async () => {
       </section>
 
       <section
-        v-for="group in sortedGroups"
-        :key="group.id"
+        v-for="workspace in workspaces"
+        :key="workspace.id"
         class="group-section"
         :class="{
-          dragging: draggedGroupId === group.id,
-          'drag-over': dragOverKey === `group-${group.id}`,
+          dragging: draggedWorkspaceId === workspace.id,
+          'drag-over': dragOverKey === `workspace-${workspace.id}`,
         }"
-        :style="groupColorStyle(group.color)"
-        @dragover="onDragOver(`group-${group.id}`, $event)"
-        @dragleave="onDragLeave(`group-${group.id}`)"
-        @drop="draggedGroupId === null ? onDrop(group.id, -1, $event) : onGroupDrop(group, $event)"
+        :style="groupColorStyle(workspace.color)"
+        @dragover="onDragOver(`workspace-${workspace.id}`, $event)"
+        @dragleave="onDragLeave(`workspace-${workspace.id}`)"
+        @drop="draggedWorkspaceId === null ? onDrop(workspace.id, -1, $event) : onWorkspaceDrop(workspace, $event)"
       >
         <div class="group-header">
           <span
@@ -571,31 +525,31 @@ onMounted(async () => {
             draggable="true"
             :title="t('dragGroup')"
             :aria-label="t('dragGroup')"
-            @dragstart="onGroupDragStart(group, $event)"
+            @dragstart="onWorkspaceDragStart(workspace, $event)"
             @dragend="onDragEnd"
           >
             <GripVertical :size="16" aria-hidden="true" />
           </span>
           <input
             class="group-title"
-            :value="groupTitle(group)"
+            :value="workspace.name"
             :aria-label="t('groupTitle')"
-            @blur="updateGroupTitle(group, $event)"
+            @blur="updateWorkspaceTitle(workspace, $event)"
             @keydown.enter="($event.target as HTMLInputElement).blur()"
           >
-          <div class="group-color-picker" :style="groupColorStyle(group.color)">
+          <div class="group-color-picker" :style="groupColorStyle(workspace.color)">
             <button
               class="color-picker-trigger"
               type="button"
               :title="t('groupColor')"
               :aria-label="t('groupColor')"
-              :aria-expanded="openColorPickerGroupId === group.id"
-              @click.stop="toggleColorPicker(group.id)"
+              :aria-expanded="openColorPickerGroupId === workspace.id"
+              @click.stop="toggleColorPicker(workspace.id)"
             >
               <span class="color-dot" aria-hidden="true"></span>
             </button>
             <div
-              v-if="openColorPickerGroupId === group.id"
+              v-if="openColorPickerGroupId === workspace.id"
               class="color-picker-popover"
               role="menu"
               :aria-label="t('groupColor')"
@@ -607,10 +561,10 @@ onMounted(async () => {
                 class="color-option"
                 type="button"
                 role="menuitemradio"
-                :aria-checked="group.color === color"
+                :aria-checked="workspace.color === color"
                 :title="color"
                 :style="groupColorStyle(color)"
-                @click="updateGroupColor(group, color)"
+                @click="updateWorkspaceColor(workspace, color)"
               >
                 <span class="color-dot" aria-hidden="true"></span>
               </button>
@@ -619,11 +573,11 @@ onMounted(async () => {
           <button
             class="icon-button"
             type="button"
-            :title="group.collapsed ? t('showWorkspace') : t('hideWorkspace')"
-            :aria-label="group.collapsed ? t('showWorkspace') : t('hideWorkspace')"
-            @click="toggleGroup(group)"
+            :title="workspace.collapsed ? t('showWorkspace') : t('hideWorkspace')"
+            :aria-label="workspace.collapsed ? t('showWorkspace') : t('hideWorkspace')"
+            @click="toggleWorkspace(workspace)"
           >
-            <Eye v-if="group.collapsed" :size="17" aria-hidden="true" />
+            <Eye v-if="workspace.collapsed" :size="17" aria-hidden="true" />
             <EyeOff v-else :size="17" aria-hidden="true" />
           </button>
           <button
@@ -631,27 +585,28 @@ onMounted(async () => {
             type="button"
             :title="t('deleteWorkspace')"
             :aria-label="t('deleteWorkspace')"
-            @click="deleteWorkspacePlaceholder(group)"
+            @click="deleteWorkspace(workspace)"
           >
             <Trash2 :size="17" aria-hidden="true" />
           </button>
         </div>
 
-        <ol v-if="!group.collapsed" class="tabs">
+        <ol v-if="!workspace.collapsed" class="tabs">
           <li
-            v-for="tab in tabsByGroup.get(group.id) || []"
+            v-for="tab in workspace.tabs"
             :key="tab.id"
             class="tab"
             :class="{
               active: tab.active,
-              dragging: draggedTabId === tab.id,
+              dragging: draggedTabId === tab.tabId,
               'drag-over': dragOverKey === `tab-${tab.id}`,
+              'closed-tab': !tab.open,
             }"
-            draggable="true"
-            @dragstart="onDragStart(tab, $event)"
+            :draggable="Boolean(tab.tabId)"
+            @dragstart="onTabDragStart(tab, $event)"
             @dragover="onTabDragOver(`tab-${tab.id}`, $event)"
             @dragleave="onDragLeave(`tab-${tab.id}`)"
-            @drop="onTabDrop(tab, $event)"
+            @drop="onTabDrop(workspace.id, tab, $event)"
             @dragend="onDragEnd"
           >
             <span class="drag-handle" aria-hidden="true">
@@ -665,7 +620,7 @@ onMounted(async () => {
               class="tab-title-button"
               type="button"
               :title="tabTitle(tab)"
-              @click="activateTab(tab.id)"
+              @click="openWorkspaceTab(workspace, tab)"
             >
               <span class="tab-title">
                 {{ tabTitle(tab) }}
@@ -676,7 +631,7 @@ onMounted(async () => {
             </button>
             <div class="tab-actions">
               <Circle
-                v-if="isDirtyPinnedTab(tab)"
+                v-if="tab.dirty"
                 class="dirty-dot"
                 :size="9"
                 :title="t('pinnedTabDirty')"
@@ -685,19 +640,20 @@ onMounted(async () => {
               <button
                 class="icon-button subtle"
                 type="button"
-                :class="{ active: isPinnedTab(tab) }"
-                :title="isPinnedTab(tab) ? t('unpinTab') : t('pinTab')"
-                :aria-label="isPinnedTab(tab) ? t('unpinTab') : t('pinTab')"
-                @click.stop="togglePinnedTabPlaceholder(tab)"
+                :class="{ active: tab.pinned }"
+                :title="tab.pinned ? t('unpinTab') : t('pinTab')"
+                :aria-label="tab.pinned ? t('unpinTab') : t('pinTab')"
+                @click.stop="togglePinnedTab(workspace, tab)"
               >
                 <Star :size="16" aria-hidden="true" />
               </button>
               <button
+                v-if="tab.open"
                 class="icon-button subtle"
                 type="button"
                 :title="t('closeTab')"
                 :aria-label="t('closeTab')"
-                @click.stop="closeTabPlaceholder(tab)"
+                @click.stop="closeWorkspaceTab(tab)"
               >
                 <X :size="16" aria-hidden="true" />
               </button>

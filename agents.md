@@ -47,7 +47,7 @@
 ## Workspace 存储
 
 - 使用 `chrome.bookmarks` 管理 workspace 静态结构。
-- 根目录为 `Chrome Workspace`。
+- 根目录为 `Harbor Workspace`。
 - 每个 workspace 是根目录下的书签文件夹。
 - Workspace 文件夹 title 格式为 `[color] name`，例如 `[blue] Work`。
 - 每个固定 tab 是 workspace 文件夹里的 bookmark。

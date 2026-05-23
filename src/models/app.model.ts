@@ -1,4 +1,5 @@
 import { WindowModel, type WindowContext, type WindowRole } from "./window.model";
+import { WorkspaceModel, type TabGroupColor } from "./workspace.model";
 
 type AppMessage =
     | {
@@ -15,11 +16,70 @@ type AppMessage =
     | {
         type: "SEND_ALL_TABS_TO_MAIN_WINDOW";
         windowId?: number;
+    }
+    | {
+        type: "GET_WORKSPACE_STATE";
+        windowId?: number;
+    }
+    | {
+        type: "CREATE_WORKSPACE";
+        windowId?: number;
+    }
+    | {
+        type: "RENAME_WORKSPACE";
+        workspaceId: string;
+        name: string;
+    }
+    | {
+        type: "UPDATE_WORKSPACE_COLOR";
+        workspaceId: string;
+        color: TabGroupColor;
+    }
+    | {
+        type: "TOGGLE_WORKSPACE";
+        workspaceId: string;
+    }
+    | {
+        type: "DELETE_WORKSPACE";
+        workspaceId: string;
+    }
+    | {
+        type: "OPEN_WORKSPACE_TAB";
+        workspaceId: string;
+        tabId: string;
+        windowId?: number;
+    }
+    | {
+        type: "CLOSE_WORKSPACE_TAB";
+        tabId: number;
+    }
+    | {
+        type: "PIN_TAB";
+        workspaceId: string;
+        tabId: number;
+    }
+    | {
+        type: "UNPIN_TAB";
+        tabId?: number;
+        bookmarkId?: string;
+    }
+    | {
+        type: "MOVE_WORKSPACE_TAB";
+        tabId: number;
+        workspaceId: string | null;
+        index: number;
+        windowId?: number;
+    }
+    | {
+        type: "MOVE_WORKSPACE";
+        sourceWorkspaceId: string;
+        targetWorkspaceId: string;
     };
 
 export class AppModel {
 
     windows: WindowModel[] = [];
+    workspace = new WorkspaceModel();
 
     constructor() {
     }
@@ -163,6 +223,50 @@ export class AppModel {
                 return { ok: true };
             case "SEND_ALL_TABS_TO_MAIN_WINDOW":
                 await this.sendAllTabsToMainWindow(message.windowId);
+                return { ok: true };
+            case "GET_WORKSPACE_STATE":
+                if (!message.windowId) return { workspaces: [], ungroupedTabs: [] };
+                return this.workspace.getState(message.windowId);
+            case "CREATE_WORKSPACE":
+                if (!message.windowId) return { ok: false };
+                await this.workspace.createWorkspace(message.windowId);
+                return { ok: true };
+            case "RENAME_WORKSPACE":
+                await this.workspace.renameWorkspace(message.workspaceId, message.name);
+                return { ok: true };
+            case "UPDATE_WORKSPACE_COLOR":
+                await this.workspace.updateWorkspaceColor(message.workspaceId, message.color);
+                return { ok: true };
+            case "TOGGLE_WORKSPACE":
+                await this.workspace.toggleWorkspace(message.workspaceId);
+                return { ok: true };
+            case "DELETE_WORKSPACE":
+                await this.workspace.deleteWorkspace(message.workspaceId);
+                return { ok: true };
+            case "OPEN_WORKSPACE_TAB":
+                if (!message.windowId) return { ok: false };
+                await this.workspace.openWorkspaceTab(message.workspaceId, message.tabId, message.windowId);
+                return { ok: true };
+            case "CLOSE_WORKSPACE_TAB":
+                await this.workspace.closeWorkspaceTab(message.tabId);
+                return { ok: true };
+            case "PIN_TAB":
+                await this.workspace.pinTab(message.workspaceId, message.tabId);
+                return { ok: true };
+            case "UNPIN_TAB":
+                await this.workspace.unpinTab(message.tabId, message.bookmarkId);
+                return { ok: true };
+            case "MOVE_WORKSPACE_TAB":
+                if (!message.windowId) return { ok: false };
+                await this.workspace.moveTabToWorkspace(
+                    message.tabId,
+                    message.workspaceId,
+                    message.index,
+                    message.windowId,
+                );
+                return { ok: true };
+            case "MOVE_WORKSPACE":
+                await this.workspace.moveWorkspace(message.sourceWorkspaceId, message.targetWorkspaceId);
                 return { ok: true };
             default:
                 return { ok: false };

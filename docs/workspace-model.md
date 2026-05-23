@@ -47,7 +47,7 @@ Workspace 是扩展自己的长期结构，但静态数据存放在 Chrome 书�
 扩展维护一个根书签目录：
 
 ```text
-Chrome Workspace
+Harbor Workspace
   [blue] Work
     GitHub
     Gmail
@@ -57,7 +57,7 @@ Chrome Workspace
 
 映射规则：
 
-- 根目录 `Chrome Workspace` 是扩展管理的 workspace 根。
+- 根目录 `Harbor Workspace` 是扩展管理的 workspace 根。
 - 每个 workspace 是根目录下的一个书签文件夹。
 - 每个固定标签页是 workspace 文件夹下的一个 bookmark。
 - Workspace 顺序使用书签文件夹顺序。
@@ -162,7 +162,7 @@ Workspace 静态结构不存 `chrome.storage.local`，而是存 Chrome 书签树
 
 点击 `+` 新建 workspace 时，目标行为是：
 
-1. 在 `Chrome Workspace` 根书签目录下创建一个新的 workspace 文件夹。
+1. 在 `Harbor Workspace` 根书签目录下创建一个新的 workspace 文件夹。
 2. 文件夹 title 使用默认颜色和默认名称，例如 `[grey] Untitled workspace`。
 3. 在主窗口创建一个新标签页，作为该 workspace 的初始页面。
 4. 把新标签页加入新 workspace 对应的 Chrome 标签组。
@@ -260,7 +260,7 @@ Workspace 静态结构由 Chrome 书签树持久化和同步，不需要扩展�
 
 1. 用 `chrome.tabs.query({ windowId: primaryWindowId })` 查询主窗口标签页。
 2. 用 `chrome.tabGroups.query({ windowId: primaryWindowId })` 查询主窗口标签组。
-3. 读取 `Chrome Workspace` 根目录下的 workspace 文件夹。
+3. 读取 `Harbor Workspace` 根目录下的 workspace 文件夹。
 4. 按书签文件夹 ID 绑定 workspace。
 5. 将已打开的 Chrome tab 与 workspace bookmark 建立运行时绑定。
 
