@@ -1,4 +1,16 @@
 <script setup lang="ts">
+import {
+  Circle,
+  Eye,
+  EyeOff,
+  File,
+  GripVertical,
+  Plus,
+  RefreshCw,
+  Star,
+  Trash2,
+  X,
+} from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "../i18n";
 import type { WindowContext } from "../models/window.model";
@@ -71,6 +83,7 @@ const groups = ref<chrome.tabGroups.TabGroup[]>([]);
 const draggedTabId = ref<number | null>(null);
 const draggedGroupId = ref<number | null>(null);
 const dragOverKey = ref("");
+const openColorPickerGroupId = ref<number | null>(null);
 const windowContext = ref<WindowContext | null>(null);
 const { t } = useI18n();
 
@@ -81,12 +94,36 @@ function tabTitle(tab: chrome.tabs.Tab) {
   return tab.title || tab.url || t("untitledTab");
 }
 
+function tabSubtitle(tab: chrome.tabs.Tab) {
+  if (!isDirtyPinnedTab(tab)) return "";
+
+  return tab.title || "";
+}
+
+function tabFavicon(tab: chrome.tabs.Tab) {
+  return tab.favIconUrl || "";
+}
+
+function isPinnedTab(_tab: chrome.tabs.Tab) {
+  return false;
+}
+
+function isDirtyPinnedTab(_tab: chrome.tabs.Tab) {
+  return false;
+}
+
 function groupTitle(group: chrome.tabGroups.TabGroup) {
   return group.title || t("untitledGroup");
 }
 
 function groupColorStyle(color: TabGroupColor) {
   return GROUP_COLOR_STYLES[color];
+}
+
+function isEditableElement(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+
+  return Boolean(target.closest("input, textarea, [contenteditable='true']"));
 }
 
 function groupTabsByGroupId(openTabs: chrome.tabs.Tab[]) {
@@ -192,6 +229,26 @@ async function groupActiveTab() {
   await refreshTabs();
 }
 
+function createWorkspacePlaceholder() {
+  console.info("Creating a bookmark-backed workspace is documented but not implemented yet.");
+}
+
+function togglePinnedTabPlaceholder(tab: chrome.tabs.Tab) {
+  if (isPinnedTab(tab) && !window.confirm(t("unpinTabConfirm"))) return;
+
+  console.info("Pinning workspace tabs is documented but not implemented yet.", tab.id);
+}
+
+function closeTabPlaceholder(tab: chrome.tabs.Tab) {
+  console.info("Closing tabs from Harbor is documented but not implemented yet.", tab.id);
+}
+
+function deleteWorkspacePlaceholder(group: chrome.tabGroups.TabGroup) {
+  if (!window.confirm(t("deleteWorkspaceConfirm"))) return;
+
+  console.info("Deleting bookmark-backed workspaces is documented but not implemented yet.", group.id);
+}
+
 function onDragStart(tab: chrome.tabs.Tab, event: DragEvent) {
   if (!tab.id || !event.dataTransfer) return;
 
@@ -291,12 +348,11 @@ async function updateGroupTitle(group: chrome.tabGroups.TabGroup, event: Event) 
   await refreshTabs();
 }
 
-async function updateGroupColor(group: chrome.tabGroups.TabGroup, event: Event) {
-  const target = event.target as HTMLSelectElement;
-
+async function updateGroupColor(group: chrome.tabGroups.TabGroup, color: TabGroupColor) {
   await chrome.tabGroups.update(group.id, {
-    color: target.value as TabGroupColor,
+    color,
   });
+  openColorPickerGroupId.value = null;
   await refreshTabs();
 }
 
@@ -318,9 +374,27 @@ async function ungroupTabs(group: chrome.tabGroups.TabGroup) {
   await refreshTabs();
 }
 
+function toggleColorPicker(groupId: number) {
+  openColorPickerGroupId.value = openColorPickerGroupId.value === groupId ? null : groupId;
+}
+
 onMounted(async () => {
   await refreshWindowContext();
   await refreshTabs();
+
+  document.addEventListener("contextmenu", (event) => {
+    if (isEditableElement(event.target)) return;
+
+    event.preventDefault();
+  });
+
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+
+    if (target instanceof HTMLElement && target.closest(".group-color-picker")) return;
+
+    openColorPickerGroupId.value = null;
+  });
 
   chrome.tabs.onCreated.addListener(refreshTabs);
   chrome.tabs.onUpdated.addListener(refreshTabs);
@@ -377,9 +451,23 @@ onMounted(async () => {
         {{ t("appName") }}
       </h1>
       <div class="toolbar">
-        <button type="button" @click="groupActiveTab">{{ t("groupActive") }}</button>
-        <button type="button" :title="t('refresh')" @click="refreshTabs">
-          {{ t("refresh") }}
+        <button
+          class="icon-button"
+          type="button"
+          :title="t('newWorkspace')"
+          :aria-label="t('newWorkspace')"
+          @click="createWorkspacePlaceholder"
+        >
+          <Plus :size="18" aria-hidden="true" />
+        </button>
+        <button
+          class="icon-button"
+          type="button"
+          :title="t('refresh')"
+          :aria-label="t('refresh')"
+          @click="refreshTabs"
+        >
+          <RefreshCw :size="18" aria-hidden="true" />
         </button>
       </div>
     </header>
@@ -412,15 +500,54 @@ onMounted(async () => {
             @drop="onTabDrop(tab, $event)"
             @dragend="onDragEnd"
           >
-            <span class="drag-handle" aria-hidden="true">:::</span>
+            <span class="drag-handle" aria-hidden="true">
+              <GripVertical :size="16" />
+            </span>
+            <span class="tab-favicon" aria-hidden="true">
+              <img v-if="tabFavicon(tab)" :src="tabFavicon(tab)" alt="">
+              <File v-else :size="16" />
+            </span>
             <button
-              class="tab-title"
+              class="tab-title-button"
               type="button"
               :title="tabTitle(tab)"
               @click="activateTab(tab.id)"
             >
-              {{ tabTitle(tab) }}
+              <span class="tab-title">
+                {{ tabTitle(tab) }}
+                <span v-if="tabSubtitle(tab)" class="tab-subtitle">
+                  · {{ tabSubtitle(tab) }}
+                </span>
+              </span>
             </button>
+            <div class="tab-actions">
+              <Circle
+                v-if="isDirtyPinnedTab(tab)"
+                class="dirty-dot"
+                :size="9"
+                :title="t('pinnedTabDirty')"
+                :aria-label="t('pinnedTabDirty')"
+              />
+              <button
+                class="icon-button subtle"
+                type="button"
+                :class="{ active: isPinnedTab(tab) }"
+                :title="isPinnedTab(tab) ? t('unpinTab') : t('pinTab')"
+                :aria-label="isPinnedTab(tab) ? t('unpinTab') : t('pinTab')"
+                @click.stop="togglePinnedTabPlaceholder(tab)"
+              >
+                <Star :size="16" aria-hidden="true" />
+              </button>
+              <button
+                class="icon-button subtle"
+                type="button"
+                :title="t('closeTab')"
+                :aria-label="t('closeTab')"
+                @click.stop="closeTabPlaceholder(tab)"
+              >
+                <X :size="16" aria-hidden="true" />
+              </button>
+            </div>
           </li>
         </ol>
       </section>
@@ -447,7 +574,7 @@ onMounted(async () => {
             @dragstart="onGroupDragStart(group, $event)"
             @dragend="onDragEnd"
           >
-            :::
+            <GripVertical :size="16" aria-hidden="true" />
           </span>
           <input
             class="group-title"
@@ -456,25 +583,58 @@ onMounted(async () => {
             @blur="updateGroupTitle(group, $event)"
             @keydown.enter="($event.target as HTMLInputElement).blur()"
           >
-          <select
-            class="group-color"
-            :title="t('groupColor')"
-            :value="group.color"
-            :style="groupColorStyle(group.color)"
-            @change="updateGroupColor(group, $event)"
-          >
-            <option
-              v-for="color in GROUP_COLORS"
-              :key="color"
-              :value="color"
+          <div class="group-color-picker" :style="groupColorStyle(group.color)">
+            <button
+              class="color-picker-trigger"
+              type="button"
+              :title="t('groupColor')"
+              :aria-label="t('groupColor')"
+              :aria-expanded="openColorPickerGroupId === group.id"
+              @click.stop="toggleColorPicker(group.id)"
             >
-              {{ color }}
-            </option>
-          </select>
-          <button type="button" @click="toggleGroup(group)">
-            {{ group.collapsed ? t("show") : t("hide") }}
+              <span class="color-dot" aria-hidden="true"></span>
+            </button>
+            <div
+              v-if="openColorPickerGroupId === group.id"
+              class="color-picker-popover"
+              role="menu"
+              :aria-label="t('groupColor')"
+              @click.stop
+            >
+              <button
+                v-for="color in GROUP_COLORS"
+                :key="color"
+                class="color-option"
+                type="button"
+                role="menuitemradio"
+                :aria-checked="group.color === color"
+                :title="color"
+                :style="groupColorStyle(color)"
+                @click="updateGroupColor(group, color)"
+              >
+                <span class="color-dot" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+          <button
+            class="icon-button"
+            type="button"
+            :title="group.collapsed ? t('showWorkspace') : t('hideWorkspace')"
+            :aria-label="group.collapsed ? t('showWorkspace') : t('hideWorkspace')"
+            @click="toggleGroup(group)"
+          >
+            <Eye v-if="group.collapsed" :size="17" aria-hidden="true" />
+            <EyeOff v-else :size="17" aria-hidden="true" />
           </button>
-          <button type="button" @click="ungroupTabs(group)">{{ t("ungroup") }}</button>
+          <button
+            class="icon-button danger"
+            type="button"
+            :title="t('deleteWorkspace')"
+            :aria-label="t('deleteWorkspace')"
+            @click="deleteWorkspacePlaceholder(group)"
+          >
+            <Trash2 :size="17" aria-hidden="true" />
+          </button>
         </div>
 
         <ol v-if="!group.collapsed" class="tabs">
@@ -494,15 +654,54 @@ onMounted(async () => {
             @drop="onTabDrop(tab, $event)"
             @dragend="onDragEnd"
           >
-            <span class="drag-handle" aria-hidden="true">:::</span>
+            <span class="drag-handle" aria-hidden="true">
+              <GripVertical :size="16" />
+            </span>
+            <span class="tab-favicon" aria-hidden="true">
+              <img v-if="tabFavicon(tab)" :src="tabFavicon(tab)" alt="">
+              <File v-else :size="16" />
+            </span>
             <button
-              class="tab-title"
+              class="tab-title-button"
               type="button"
               :title="tabTitle(tab)"
               @click="activateTab(tab.id)"
             >
-              {{ tabTitle(tab) }}
+              <span class="tab-title">
+                {{ tabTitle(tab) }}
+                <span v-if="tabSubtitle(tab)" class="tab-subtitle">
+                  · {{ tabSubtitle(tab) }}
+                </span>
+              </span>
             </button>
+            <div class="tab-actions">
+              <Circle
+                v-if="isDirtyPinnedTab(tab)"
+                class="dirty-dot"
+                :size="9"
+                :title="t('pinnedTabDirty')"
+                :aria-label="t('pinnedTabDirty')"
+              />
+              <button
+                class="icon-button subtle"
+                type="button"
+                :class="{ active: isPinnedTab(tab) }"
+                :title="isPinnedTab(tab) ? t('unpinTab') : t('pinTab')"
+                :aria-label="isPinnedTab(tab) ? t('unpinTab') : t('pinTab')"
+                @click.stop="togglePinnedTabPlaceholder(tab)"
+              >
+                <Star :size="16" aria-hidden="true" />
+              </button>
+              <button
+                class="icon-button subtle"
+                type="button"
+                :title="t('closeTab')"
+                :aria-label="t('closeTab')"
+                @click.stop="closeTabPlaceholder(tab)"
+              >
+                <X :size="16" aria-hidden="true" />
+              </button>
+            </div>
           </li>
         </ol>
       </section>

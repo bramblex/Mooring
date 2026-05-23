@@ -13,6 +13,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@lucide/vue": "^1.16.0",
     "@types/chrome": "^0.1.42",
     "@types/node": "^25.9.1",
     "@vitejs/plugin-vue": "^6.0.7",

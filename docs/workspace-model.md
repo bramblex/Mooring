@@ -140,15 +140,49 @@ Workspace 静态结构不存 `chrome.storage.local`，而是存 Chrome 书签树
 完整 workspace UI 包括：
 
 - 展示 workspace 列表。
-- 创建 workspace。
+- 创建 workspace，入口使用 `+` 图标。
 - 重命名 workspace。
-- 修改 workspace 颜色。
-- 折叠或展开 workspace。
+- 修改 workspace 颜色，入口使用 Chrome 风格颜色圆点。
+- 折叠或展开 workspace，入口使用显示或隐藏图标。
+- 删除 workspace，入口使用删除图标，并且必须二次确认。
 - 拖动 workspace 排序。
 - 在 workspace 之间拖动标签页。
 - 把当前激活标签页送入 workspace。
 - 固定或取消固定 workspace 内的标签页。
 - 从书签树恢复缺失的 workspace。
+
+### Workspace UI 操作
+
+主窗口侧边栏的 workspace 操作用轻量 icon 表达，避免用长文字按钮占用空间。
+
+顶部工具区：
+
+- `+`：新建 workspace。
+- `Refresh` 图标：刷新当前主窗口 tab、tab group 和 workspace 运行时绑定。
+
+点击 `+` 新建 workspace 时，目标行为是：
+
+1. 在 `Chrome Workspace` 根书签目录下创建一个新的 workspace 文件夹。
+2. 文件夹 title 使用默认颜色和默认名称，例如 `[grey] Untitled workspace`。
+3. 在主窗口创建一个新标签页，作为该 workspace 的初始页面。
+4. 把新标签页加入新 workspace 对应的 Chrome 标签组。
+5. 聚焦新标签页，并让 workspace 标题进入可编辑状态。
+
+Workspace 头部操作：
+
+- 标题输入框用于重命名 workspace。
+- 颜色圆点用于选择 workspace 颜色，颜色集合与 Chrome tab group 对齐。
+- 显示或隐藏图标用于折叠、展开 workspace。
+- 删除图标用于删除 workspace。
+
+删除 workspace 必须二次确认。确认后目标行为是：
+
+1. 删除对应 workspace 书签文件夹。
+2. 移除或关闭对应运行时 Chrome 标签组里的普通标签页。
+3. 对已经固定为书签的标签页，以书签删除结果为准，不再作为可恢复项显示。
+4. 刷新主窗口运行时绑定。
+
+第一版实现可以先使用浏览器原生确认框，后续再替换为扩展内确认弹层。
 
 ## 临时窗口行为
 
@@ -287,6 +321,50 @@ function parseWorkspaceTitle(title: string) {
 ## 固定标签页
 
 Workspace 内的标签页可以被固定。固定后的标签页属于 workspace 的长期结构，而不只是当前打开的 Chrome tab。
+
+### 标签页 UI 状态
+
+Workspace 里的标签页 UI 由四部分组成：
+
+- 左侧 favicon：显示当前页面 icon；没有 favicon 时显示默认页面图标。
+- 标题区域：显示 tab 标题或固定书签名。
+- 状态区域：显示固定状态、dirty 状态等轻量 icon。
+- 右侧操作区：显示固定星标和关闭图标。
+
+标签页有四种产品状态：
+
+- 未固定 live tab：只代表当前打开的 Chrome tab，星标为空。
+- 已固定且 URL 匹配：对应 workspace 书签，星标亮起，标题显示书签名。
+- 已固定但 URL 偏离：星标亮起，显示 dirty 圆点，标题显示 `书签名 · 当前标签名`。
+- 已固定但 live tab 已关闭：没有当前 Chrome tab，但 bookmark 仍保留在 workspace 中，点击后可以恢复。
+
+Dirty 状态用于表达“这个打开着的标签页已经离开它绑定的书签 URL”。它不自动更新书签 URL，也不自动取消固定，只提醒用户当前页面和可恢复书签已经不同。
+
+固定 tab 的标题来源规则：
+
+1. 如果 tab 已固定，主标题使用 bookmark title。
+2. 如果 tab 已固定且 dirty，主标题后追加当前 Chrome tab title。
+3. 如果 tab 未固定，标题使用 Chrome tab title。
+4. 如果没有标题，使用 URL；仍然没有则显示“未命名标签页”。
+
+固定星标操作：
+
+- 点击空星标：把当前 tab 固定到所属 workspace，创建 bookmark。
+- 点击亮星标：取消固定，必须二次确认。
+- 取消固定确认后，删除对应 bookmark；如果当前 Chrome tab 仍打开，它会变成普通 live tab。
+- 取消固定不会自动关闭当前 Chrome tab。
+
+关闭图标操作：
+
+- 未固定 live tab：关闭 Chrome tab，并从 workspace UI 中移除。
+- 已固定且 live tab 打开：关闭 Chrome tab，但保留 bookmark，workspace 中仍显示这个固定 tab。
+- 已固定但 live tab 已关闭：关闭图标可以隐藏或禁用，因为没有可关闭的 Chrome tab。
+
+点击标签页标题区域：
+
+- 未固定 live tab：激活当前 Chrome tab。
+- 已固定且 live tab 打开：激活当前 Chrome tab。
+- 已固定但 live tab 已关闭：在原 workspace 位置重新打开 bookmark URL。
 
 固定标签页的行为：
 
@@ -429,3 +507,11 @@ await chrome.tabGroups.move(sourceGroupId, {
 - 固定标签页是 workspace 的长期结构，关闭页面不会删除它。
 - 普通标签页是当前会话内容，关闭页面后会从 workspace 中移除。
 - Workspace 静态结构依赖 Chrome 书签同步，不自己实现云同步。
+- Workspace 创建入口是 `+` 图标，而不是“分组当前标签页”的文字按钮。
+- Workspace 颜色选择使用 Chrome 风格颜色圆点，不在主界面展示长颜色名。
+- Workspace 隐藏、显示、删除都使用 icon 表达；删除必须二次确认。
+- 固定标签页使用星标表达，亮星表示它已经写入 workspace 对应书签目录。
+- 取消固定必须二次确认，确认后删除 bookmark，但不关闭当前 Chrome tab。
+- 固定标签页离开 bookmark URL 后显示 dirty 圆点，并保留原 bookmark title。
+- 已固定标签页关闭后仍保留在 workspace 中，再点击时按 bookmark URL 恢复。
+- Tab 行的关闭图标只关闭运行时 Chrome tab，不直接删除固定 bookmark。
