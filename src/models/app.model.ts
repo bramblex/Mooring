@@ -39,6 +39,14 @@ export class AppModel {
         return window;
     }
 
+    async initialize() {
+        await this.ensureMainWindowIsValid();
+        if (this.mainWindow) return;
+
+        const currentWindow = await chrome.windows.getCurrent();
+        this.createWindow(currentWindow.id, "primary");
+    }
+
     async getWindowContext(windowId?: number): Promise<WindowContext> {
         await this.ensureMainWindowIsValid();
 
@@ -117,8 +125,11 @@ export class AppModel {
     }
 
     start() {
-        chrome.runtime.onInstalled.addListener(() => {
-            chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+        this.initialize();
+
+        chrome.runtime.onInstalled.addListener(async () => {
+            await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+            await this.initialize();
         });
 
         chrome.action.onClicked.addListener(async (tab) => {

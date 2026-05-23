@@ -323,6 +323,8 @@ onMounted(async () => {
   chrome.tabs.onCreated.addListener(refreshTabs);
   chrome.tabs.onUpdated.addListener(refreshTabs);
   chrome.tabs.onMoved.addListener(refreshTabs);
+  chrome.tabs.onAttached.addListener(refreshTabs);
+  chrome.tabs.onDetached.addListener(refreshTabs);
   chrome.tabs.onRemoved.addListener(refreshTabs);
   chrome.tabs.onActivated.addListener(refreshTabs);
   chrome.tabGroups.onCreated.addListener(refreshTabs);
