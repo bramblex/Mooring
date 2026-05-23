@@ -5,8 +5,11 @@
   --color-muted: #52616f;
   --color-control-bg: #ffffff;
   --color-control-border: #cbd5e1;
+  --color-control-hover: #f1f5f9;
+  --color-control-active: #e2e8f0;
   --color-surface: #ffffff;
   --color-surface-border: #d8dee8;
+  --color-surface-hover: #f8fafc;
   --color-group-bg: #eef2f7;
   --color-group-border: #d8dee8;
   --color-focus: #2563eb;
@@ -24,8 +27,11 @@
     --color-muted: #cbd5e1;
     --color-control-bg: #172033;
     --color-control-border: #334155;
+    --color-control-hover: #23314a;
+    --color-control-active: #2d3d59;
     --color-surface: #172033;
     --color-surface-border: #334155;
+    --color-surface-hover: #1d2940;
     --color-group-bg: #101a2b;
     --color-group-border: #334155;
     --color-focus: #60a5fa;
@@ -110,6 +116,31 @@ select {
   color: inherit;
   background: var(--color-control-bg);
   cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+
+button:hover,
+select:hover {
+  border-color: var(--color-focus);
+  background: var(--color-control-hover);
+}
+
+button:active,
+select:active {
+  background: var(--color-control-active);
+  transform: translateY(1px);
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 
 .icon-button {
@@ -141,6 +172,10 @@ select {
   border-color: var(--color-control-border);
   background: var(--color-control-bg);
   color: var(--color-text);
+}
+
+.icon-button:hover {
+  box-shadow: 0 1px 2px rgb(15 23 42 / 12%);
 }
 
 .icon-button.active {
@@ -185,6 +220,14 @@ select {
   border-radius: 6px;
   padding: 8px;
   background: var(--group-bg, var(--color-group-bg));
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.group-section:hover {
+  box-shadow: 0 1px 4px rgb(15 23 42 / 10%);
 }
 
 .group-section.drag-over,
@@ -221,6 +264,15 @@ h2 {
   text-align: center;
   cursor: grab;
   user-select: none;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
+}
+
+.group-drag-handle:hover {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--group-color) 14%, transparent);
+  color: var(--group-color, var(--color-focus));
 }
 
 .group-title {
@@ -231,6 +283,15 @@ h2 {
   color: inherit;
   background: var(--color-control-bg);
   font: inherit;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.group-title:hover {
+  border-color: var(--group-color, var(--color-focus));
+  background: var(--color-control-hover);
 }
 
 .group-color-picker {
@@ -244,6 +305,17 @@ h2 {
   border-radius: 6px;
   background: var(--color-control-bg);
   cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.group-color-picker:hover,
+.group-color-picker:focus-within {
+  border-color: var(--group-color, var(--color-focus));
+  background: var(--color-control-hover);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 12%);
 }
 
 .color-picker-trigger {
@@ -262,6 +334,11 @@ h2 {
 .color-picker-trigger:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
+}
+
+.color-picker-trigger:hover {
+  background: transparent;
+  box-shadow: none;
 }
 
 .color-dot {
@@ -299,6 +376,10 @@ h2 {
   border-radius: 6px;
   padding: 0;
   background: transparent;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    transform 120ms ease;
 }
 
 .color-option:hover,
@@ -306,6 +387,10 @@ h2 {
 .color-option[aria-checked="true"] {
   border-color: var(--group-color);
   background: var(--group-bg, var(--color-group-bg));
+}
+
+.color-option:hover {
+  transform: scale(1.06);
 }
 
 .tabs {
@@ -327,6 +412,16 @@ h2 {
   border-radius: 6px;
   padding: 0 4px;
   background: var(--color-surface);
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.tab:hover {
+  border-color: var(--group-color, var(--color-focus));
+  background: var(--color-surface-hover);
+  box-shadow: 0 1px 3px rgb(15 23 42 / 10%);
 }
 
 .tab.active {
@@ -349,6 +444,15 @@ h2 {
   text-align: center;
   cursor: grab;
   user-select: none;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
+}
+
+.drag-handle:hover {
+  border-radius: 6px;
+  background: var(--color-control-hover);
+  color: var(--group-color, var(--color-focus));
 }
 
 .tab-favicon {
@@ -376,6 +480,13 @@ h2 {
   background: transparent;
   text-align: left;
   cursor: pointer;
+}
+
+.tab-title-button:hover,
+.tab-title-button:focus-visible {
+  color: var(--color-focus);
+  background: transparent;
+  box-shadow: none;
 }
 
 .tab-title {
