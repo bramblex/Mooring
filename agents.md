@@ -19,6 +19,7 @@
 - `WindowModel` 表示单个窗口实体，只保存窗口 ID、窗口角色和窗口下的工作区列表。
 - `WorkspaceModel` 后续承载 workspace 数据。
 - `TabModel` 后续承载 workspace 内 tab 数据。
+- Workspace 静态结构使用 Chrome 书签树，运行时窗口和 tab 绑定保存在内存。
 
 ## Window 规则
 
@@ -42,6 +43,16 @@
   - `OPEN_MAIN_WINDOW`
   - `SEND_CURRENT_TAB_TO_MAIN_WINDOW`
   - `SEND_ALL_TABS_TO_MAIN_WINDOW`
+
+## Workspace 存储
+
+- 使用 `chrome.bookmarks` 管理 workspace 静态结构。
+- 根目录为 `Chrome Workspace`。
+- 每个 workspace 是根目录下的书签文件夹。
+- Workspace 文件夹 title 格式为 `[color] name`，例如 `[blue] Work`。
+- 每个固定 tab 是 workspace 文件夹里的 bookmark。
+- Workspace 顺序和固定 tab 顺序使用书签顺序。
+- 运行时状态，例如 `groupId`、`openTabId`、主窗口 ID，不写入书签。
 
 ## 验证
 
