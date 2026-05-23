@@ -1,6 +1,6 @@
-# Chrome Side Panel Tabs
+# Harbor
 
-Vue 3 + Vite + TypeScript Chrome extension for managing tabs and tab groups from a side panel.
+Vue 3 + Vite + TypeScript Chrome extension for managing tabs, workspaces, and bookmark-backed pinned pages from a side panel.
 
 详见 [窗口、Workspace 与标签页模型](docs/workspace-model.md) 和 [Service Worker 与 Side Panel 通信模型](docs/service-sidepanel-communication.md)。
 

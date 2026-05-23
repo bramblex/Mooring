@@ -337,13 +337,19 @@ onMounted(async () => {
 <template>
   <main v-if="!isWindowContextReady" class="panel">
     <header>
-      <h1>Tabs</h1>
+      <h1 class="brand-title">
+        <img src="/logo.svg" alt="" class="brand-logo">
+        Harbor
+      </h1>
     </header>
   </main>
 
   <main v-else-if="!isPrimaryWindow" class="panel temporary-panel">
     <header>
-      <h1>Temporary window</h1>
+      <h1 class="brand-title">
+        <img src="/logo.svg" alt="" class="brand-logo">
+        Harbor
+      </h1>
     </header>
 
     <section class="temporary-actions" aria-label="Temporary window actions">
@@ -362,7 +368,10 @@ onMounted(async () => {
 
   <main v-else class="panel">
     <header>
-      <h1>Tabs</h1>
+      <h1 class="brand-title">
+        <img src="/logo.svg" alt="" class="brand-logo">
+        Harbor
+      </h1>
       <div class="toolbar">
         <button type="button" @click="groupActiveTab">Group active</button>
         <button type="button" title="Refresh" @click="refreshTabs">Refresh</button>

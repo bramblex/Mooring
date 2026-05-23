@@ -1,7 +1,7 @@
 {
-  "name": "chrome-workspace",
+  "name": "harbor-workspaces",
   "version": "1.0.0",
-  "description": "Vue 3 Chrome side panel extension for tab and tab group management.",
+  "description": "A Chrome side panel workspace harbor for tabs, groups, and bookmark-backed pinned pages.",
   "private": true,
   "type": "module",
   "scripts": {

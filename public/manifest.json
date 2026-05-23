@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Hello World Side Panel",
-  "description": "Manage tabs from a Chrome side panel.",
+  "name": "Harbor",
+  "description": "A workspace harbor for Chrome tabs, groups, and bookmark-backed pinned pages.",
   "version": "0.1.0",
   "permissions": ["sidePanel", "tabs", "tabGroups"],
   "action": {
-    "default_title": "Open side panel"
+    "default_title": "Open Harbor"
   },
   "commands": {
     "_execute_action": {
@@ -13,7 +13,7 @@
         "default": "Ctrl+Shift+Y",
         "mac": "Command+Shift+Y"
       },
-      "description": "Open the side panel"
+      "description": "Open Harbor"
     }
   },
   "background": {

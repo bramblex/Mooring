@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Harbor logo</title>
+  <desc id="desc">A main window harbor mark with grouped tabs and a bookmark notch.</desc>
+  <defs>
+    <linearGradient id="harbor-bg" x1="18" y1="14" x2="112" y2="116" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0f766e"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <linearGradient id="harbor-surface" x1="32" y1="30" x2="98" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dbeafe"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#harbor-bg)"/>
+  <path d="M34 30h60c6.6 0 12 5.4 12 12v54c0 6.6-5.4 12-12 12H34c-6.6 0-12-5.4-12-12V42c0-6.6 5.4-12 12-12Z" fill="#082f49" opacity=".26"/>
+  <path d="M32 24h64c6.6 0 12 5.4 12 12v58c0 6.6-5.4 12-12 12H32c-6.6 0-12-5.4-12-12V36c0-6.6 5.4-12 12-12Z" fill="url(#harbor-surface)"/>
+  <path d="M32 24h64c6.6 0 12 5.4 12 12v13H20V36c0-6.6 5.4-12 12-12Z" fill="#e0f2fe"/>
+  <circle cx="35" cy="37" r="4" fill="#ef4444"/>
+  <circle cx="49" cy="37" r="4" fill="#f59e0b"/>
+  <circle cx="63" cy="37" r="4" fill="#10b981"/>
+  <path d="M36 62h56" stroke="#1d4ed8" stroke-width="8" stroke-linecap="round"/>
+  <path d="M36 78h42" stroke="#0f766e" stroke-width="8" stroke-linecap="round"/>
+  <path d="M36 94h50" stroke="#9333ea" stroke-width="8" stroke-linecap="round"/>
+  <path d="M84 24h14c5.5 0 10 4.5 10 10v36l-12-8-12 8V24Z" fill="#f97316"/>
+  <path d="M84 24h14c5.5 0 10 4.5 10 10v6H84V24Z" fill="#fed7aa" opacity=".5"/>
+</svg>
