@@ -211,21 +211,36 @@ export class WorkspaceModel {
     const bookmarkId = parsedId.bookmarkId;
     if (!bookmarkId) return;
 
+    const openTabId = await this.findOpenTabIdByBookmarkId(bookmarkId);
+    if (openTabId) {
+      await chrome.tabs.update(openTabId, { active: true });
+      return;
+    }
+
     const [bookmark] = await chrome.bookmarks.get(bookmarkId);
     if (!bookmark?.url) return;
 
-    const existingGroupId = this.workspaceGroupIds.get(workspaceId);
-    const index = existingGroupId === undefined ? -1 : await this.workspaceInsertIndex(existingGroupId, bookmarkId);
-    const tab = await chrome.tabs.create({
+    const existingGroupId = await this.validWorkspaceGroupId(workspaceId);
+    const index = existingGroupId === undefined ? undefined : await this.workspaceInsertIndex(existingGroupId, bookmarkId);
+    const createProperties: chrome.tabs.CreateProperties = {
       windowId,
       url: bookmark.url,
-      index,
       active: true,
-    });
+    };
+
+    if (index !== undefined) {
+      createProperties.index = index;
+    }
+
+    const tab = await chrome.tabs.create(createProperties);
 
     if (!tab.id) return;
 
-    await this.ensureWorkspaceGroup(workspaceId, tab.id);
+    const groupId = await this.ensureWorkspaceGroup(workspaceId, tab.id);
+    const restoredTab = await chrome.tabs.get(tab.id);
+    if (restoredTab.groupId !== groupId) {
+      await chrome.tabs.group({ tabIds: tab.id, groupId });
+    }
     this.tabBookmarkIds.set(tab.id, bookmarkId);
   }
 
@@ -411,6 +426,16 @@ export class WorkspaceModel {
   }
 
   private bindWorkspace(workspaceId: string, groupId: number) {
+    const previousGroupId = this.workspaceGroupIds.get(workspaceId);
+    if (previousGroupId !== undefined && previousGroupId !== groupId) {
+      this.groupWorkspaceIds.delete(previousGroupId);
+    }
+
+    const previousWorkspaceId = this.groupWorkspaceIds.get(groupId);
+    if (previousWorkspaceId !== undefined && previousWorkspaceId !== workspaceId) {
+      this.workspaceGroupIds.delete(previousWorkspaceId);
+    }
+
     this.workspaceGroupIds.set(workspaceId, groupId);
     this.groupWorkspaceIds.set(groupId, workspaceId);
   }
@@ -518,9 +543,20 @@ export class WorkspaceModel {
     }
   }
 
+  private async findOpenTabIdByBookmarkId(bookmarkId: string) {
+    for (const [tabId, boundBookmarkId] of this.tabBookmarkIds.entries()) {
+      if (boundBookmarkId !== bookmarkId) continue;
+      if (await this.tabExists(tabId)) return tabId;
+
+      this.tabBookmarkIds.delete(tabId);
+    }
+
+    return undefined;
+  }
+
   private async ensureWorkspaceGroup(workspaceId: string, seedTabId: number) {
-    const existingGroupId = this.workspaceGroupIds.get(workspaceId);
-    if (existingGroupId !== undefined && await this.groupExists(existingGroupId)) {
+    const existingGroupId = await this.validWorkspaceGroupId(workspaceId);
+    if (existingGroupId !== undefined) {
       return existingGroupId;
     }
 
@@ -542,6 +578,17 @@ export class WorkspaceModel {
     } catch {
       return false;
     }
+  }
+
+  private async validWorkspaceGroupId(workspaceId: string) {
+    const groupId = this.workspaceGroupIds.get(workspaceId);
+    if (groupId === undefined) return undefined;
+
+    if (await this.groupExists(groupId)) return groupId;
+
+    this.workspaceGroupIds.delete(workspaceId);
+    this.groupWorkspaceIds.delete(groupId);
+    return undefined;
   }
 
   private async workspaceInsertIndex(groupId: number, bookmarkId: string) {
