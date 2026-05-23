@@ -1,0 +1,11 @@
+{
+  "appName": {
+    "message": "Harbor"
+  },
+  "appDescription": {
+    "message": "A workspace harbor for Chrome tabs, groups, and bookmark-backed pinned pages."
+  },
+  "openHarbor": {
+    "message": "Open Harbor"
+  }
+}

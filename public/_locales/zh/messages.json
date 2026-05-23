@@ -1,0 +1,11 @@
+{
+  "appName": {
+    "message": "Harbor"
+  },
+  "appDescription": {
+    "message": "用于管理 Chrome 标签页、分组和书签固定页的 workspace 港口。"
+  },
+  "openHarbor": {
+    "message": "打开 Harbor"
+  }
+}

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "../i18n";
 import type { WindowContext } from "../models/window.model";
 
 const NO_GROUP = chrome.tabGroups.TAB_GROUP_ID_NONE;
@@ -71,16 +72,17 @@ const draggedTabId = ref<number | null>(null);
 const draggedGroupId = ref<number | null>(null);
 const dragOverKey = ref("");
 const windowContext = ref<WindowContext | null>(null);
+const { t } = useI18n();
 
 const isPrimaryWindow = computed(() => windowContext.value?.role === "primary");
 const isWindowContextReady = computed(() => Boolean(windowContext.value));
 
 function tabTitle(tab: chrome.tabs.Tab) {
-  return tab.title || tab.url || "Untitled tab";
+  return tab.title || tab.url || t("untitledTab");
 }
 
 function groupTitle(group: chrome.tabGroups.TabGroup) {
-  return group.title || "Untitled group";
+  return group.title || t("untitledGroup");
 }
 
 function groupColorStyle(color: TabGroupColor) {
@@ -186,7 +188,7 @@ async function groupActiveTab() {
   if (!activeTab?.id) return;
 
   const groupId = await chrome.tabs.group({ tabIds: activeTab.id });
-  await chrome.tabGroups.update(groupId, { title: "New group" });
+  await chrome.tabGroups.update(groupId, { title: t("newGroup") });
   await refreshTabs();
 }
 
@@ -284,7 +286,7 @@ async function updateGroupTitle(group: chrome.tabGroups.TabGroup, event: Event) 
   const target = event.target as HTMLInputElement;
 
   await chrome.tabGroups.update(group.id, {
-    title: target.value.trim() || "Untitled group",
+    title: target.value.trim() || t("untitledGroup"),
   });
   await refreshTabs();
 }
@@ -339,7 +341,7 @@ onMounted(async () => {
     <header>
       <h1 class="brand-title">
         <img src="/logo.svg" alt="" class="brand-logo">
-        Harbor
+        {{ t("appName") }}
       </h1>
     </header>
   </main>
@@ -348,20 +350,22 @@ onMounted(async () => {
     <header>
       <h1 class="brand-title">
         <img src="/logo.svg" alt="" class="brand-logo">
-        Harbor
+        {{ t("appName") }}
       </h1>
     </header>
 
-    <section class="temporary-actions" aria-label="Temporary window actions">
+    <section class="temporary-actions" :aria-label="t('temporaryWindow')">
       <p>
-        Workspace lives in the main window. Send tabs there or open it.
+        {{ t("temporaryWindowDescription") }}
       </p>
-      <button type="button" @click="openMainWindowFromPanel">Open main window</button>
+      <button type="button" @click="openMainWindowFromPanel">
+        {{ t("openMainWindow") }}
+      </button>
       <button type="button" @click="sendCurrentTabFromPanel">
-        Send current tab to main window
+        {{ t("sendCurrentTabToMainWindow") }}
       </button>
       <button type="button" @click="sendAllTabsFromPanel">
-        Send all tabs to main window
+        {{ t("sendAllTabsToMainWindow") }}
       </button>
     </section>
   </main>
@@ -370,15 +374,17 @@ onMounted(async () => {
     <header>
       <h1 class="brand-title">
         <img src="/logo.svg" alt="" class="brand-logo">
-        Harbor
+        {{ t("appName") }}
       </h1>
       <div class="toolbar">
-        <button type="button" @click="groupActiveTab">Group active</button>
-        <button type="button" title="Refresh" @click="refreshTabs">Refresh</button>
+        <button type="button" @click="groupActiveTab">{{ t("groupActive") }}</button>
+        <button type="button" :title="t('refresh')" @click="refreshTabs">
+          {{ t("refresh") }}
+        </button>
       </div>
     </header>
 
-    <section class="groups" aria-label="Open tabs">
+    <section class="groups" :aria-label="t('openTabs')">
       <section
         class="group-section ungrouped"
         :class="{ 'drag-over': dragOverKey === 'group-ungrouped' }"
@@ -387,7 +393,7 @@ onMounted(async () => {
         @drop="onDrop(NO_GROUP, -1, $event)"
       >
         <div class="group-header">
-          <h2>Ungrouped</h2>
+          <h2>{{ t("ungrouped") }}</h2>
         </div>
         <ol class="tabs">
           <li
@@ -436,8 +442,8 @@ onMounted(async () => {
           <span
             class="group-drag-handle"
             draggable="true"
-            title="Drag group"
-            aria-label="Drag group"
+            :title="t('dragGroup')"
+            :aria-label="t('dragGroup')"
             @dragstart="onGroupDragStart(group, $event)"
             @dragend="onDragEnd"
           >
@@ -446,13 +452,13 @@ onMounted(async () => {
           <input
             class="group-title"
             :value="groupTitle(group)"
-            aria-label="Group title"
+            :aria-label="t('groupTitle')"
             @blur="updateGroupTitle(group, $event)"
             @keydown.enter="($event.target as HTMLInputElement).blur()"
           >
           <select
             class="group-color"
-            title="Group color"
+            :title="t('groupColor')"
             :value="group.color"
             :style="groupColorStyle(group.color)"
             @change="updateGroupColor(group, $event)"
@@ -466,9 +472,9 @@ onMounted(async () => {
             </option>
           </select>
           <button type="button" @click="toggleGroup(group)">
-            {{ group.collapsed ? "Show" : "Hide" }}
+            {{ group.collapsed ? t("show") : t("hide") }}
           </button>
-          <button type="button" @click="ungroupTabs(group)">Ungroup</button>
+          <button type="button" @click="ungroupTabs(group)">{{ t("ungroup") }}</button>
         </div>
 
         <ol v-if="!group.collapsed" class="tabs">
