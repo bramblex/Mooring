@@ -1,0 +1,53 @@
+# Agents
+
+## 项目定位
+
+这是一个 Vue 3 + Vite + TypeScript 的 Chrome MV3 侧边栏扩展，用 Chrome 标签组承载轻量 workspace 体验。
+
+## 开发约定
+
+- 修改前先读现有结构，优先沿用当前代码风格。
+- `service-worker.ts` 不直接堆业务逻辑，入口放在 `AppModel`。
+- `src/models` 放领域模型。
+- `src/sidepanel` 放 UI 和交互层。
+- 不引入运行时 Vue template compiler，模板通过 Vite 构建。
+- 构建产物在 `dist/`，本地加载扩展时选择 `dist`。
+
+## Model 边界
+
+- `AppModel` 是 service worker 侧的应用入口，负责注册 Chrome 事件和接收 side panel 消息。
+- `WindowModel` 表示单个窗口实体，只保存窗口 ID、窗口角色和窗口下的工作区列表。
+- `WorkspaceModel` 后续承载 workspace 数据。
+- `TabModel` 后续承载 workspace 内 tab 数据。
+
+## Window 规则
+
+- 主窗口 ID 只存在内存中，不写入 `chrome.storage.local`。
+- 没有主窗口时，下一个新打开的窗口成为主窗口。
+- 已经存在的窗口不会因为主窗口缺失而自动变成主窗口。
+- 有主窗口时，新打开窗口都是临时窗口。
+- 临时窗口没有 workspace 功能。
+- 临时窗口 side panel 只提供：
+  - `Open main window`
+  - `Send current tab to main window`
+  - `Send all tabs to main window`
+
+## Service Worker 与 Side Panel
+
+- 主窗口状态在 service worker 的 `AppModel` 内存里。
+- Side panel 不直接维护主窗口状态。
+- Side panel 通过 `chrome.runtime.sendMessage` 请求：
+  - `GET_WINDOW_CONTEXT`
+  - `OPEN_MAIN_WINDOW`
+  - `SEND_CURRENT_TAB_TO_MAIN_WINDOW`
+  - `SEND_ALL_TABS_TO_MAIN_WINDOW`
+
+## 验证
+
+提交或交付前运行：
+
+```sh
+npm run build
+```
+
+如果只改文档，可以说明未运行构建。

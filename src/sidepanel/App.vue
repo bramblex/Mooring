@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import type { WindowContext } from "../models/window.model";
 
 const NO_GROUP = chrome.tabGroups.TAB_GROUP_ID_NONE;
 type TabGroupColor = chrome.tabGroups.TabGroup["color"];
@@ -69,6 +70,10 @@ const groups = ref<chrome.tabGroups.TabGroup[]>([]);
 const draggedTabId = ref<number | null>(null);
 const draggedGroupId = ref<number | null>(null);
 const dragOverKey = ref("");
+const windowContext = ref<WindowContext | null>(null);
+
+const isPrimaryWindow = computed(() => windowContext.value?.role === "primary");
+const isWindowContextReady = computed(() => Boolean(windowContext.value));
 
 function tabTitle(tab: chrome.tabs.Tab) {
   return tab.title || tab.url || "Untitled tab";
@@ -110,9 +115,44 @@ const sortedGroups = computed(() =>
 );
 
 async function refreshTabs() {
+  if (!isPrimaryWindow.value) return;
+
   tabs.value = await chrome.tabs.query({ currentWindow: true });
   const windowId = tabs.value[0]?.windowId;
   groups.value = windowId ? await chrome.tabGroups.query({ windowId }) : [];
+}
+
+async function refreshWindowContext() {
+  const currentWindow = await chrome.windows.getCurrent();
+  windowContext.value = await chrome.runtime.sendMessage({
+    type: "GET_WINDOW_CONTEXT",
+    windowId: currentWindow.id,
+  });
+}
+
+async function openMainWindowFromPanel() {
+  await chrome.runtime.sendMessage({
+    type: "OPEN_MAIN_WINDOW",
+  });
+  await refreshWindowContext();
+}
+
+async function sendCurrentTabFromPanel() {
+  const currentWindow = await chrome.windows.getCurrent();
+  await chrome.runtime.sendMessage({
+    type: "SEND_CURRENT_TAB_TO_MAIN_WINDOW",
+    windowId: currentWindow.id,
+  });
+  await refreshWindowContext();
+}
+
+async function sendAllTabsFromPanel() {
+  const currentWindow = await chrome.windows.getCurrent();
+  await chrome.runtime.sendMessage({
+    type: "SEND_ALL_TABS_TO_MAIN_WINDOW",
+    windowId: currentWindow.id,
+  });
+  await refreshWindowContext();
 }
 
 async function activateTab(tabId?: number) {
@@ -276,8 +316,9 @@ async function ungroupTabs(group: chrome.tabGroups.TabGroup) {
   await refreshTabs();
 }
 
-onMounted(() => {
-  refreshTabs();
+onMounted(async () => {
+  await refreshWindowContext();
+  await refreshTabs();
 
   chrome.tabs.onCreated.addListener(refreshTabs);
   chrome.tabs.onUpdated.addListener(refreshTabs);
@@ -292,7 +333,32 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="panel">
+  <main v-if="!isWindowContextReady" class="panel">
+    <header>
+      <h1>Tabs</h1>
+    </header>
+  </main>
+
+  <main v-else-if="!isPrimaryWindow" class="panel temporary-panel">
+    <header>
+      <h1>Temporary window</h1>
+    </header>
+
+    <section class="temporary-actions" aria-label="Temporary window actions">
+      <p>
+        Workspace lives in the main window. Send tabs there or open it.
+      </p>
+      <button type="button" @click="openMainWindowFromPanel">Open main window</button>
+      <button type="button" @click="sendCurrentTabFromPanel">
+        Send current tab to main window
+      </button>
+      <button type="button" @click="sendAllTabsFromPanel">
+        Send all tabs to main window
+      </button>
+    </section>
+  </main>
+
+  <main v-else class="panel">
     <header>
       <h1>Tabs</h1>
       <div class="toolbar">

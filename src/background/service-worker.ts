@@ -1,9 +1,6 @@
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-});
 
-chrome.action.onClicked.addListener(async (tab) => {
-  if (!tab.windowId) return;
+import { AppModel } from "../models/app.model";
 
-  await chrome.sidePanel.open({ windowId: tab.windowId });
-});
+const app = new AppModel();
+
+app.start();

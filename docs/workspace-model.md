@@ -16,13 +16,14 @@
 
 主窗口是唯一启用 workspace 管理能力的 Chrome 窗口。
 
-- 首次初始化时，把当前窗口记录为主窗口。
-- 主窗口 ID 存为 `primaryWindowId`。
+- 没有主窗口时，下一个新打开的窗口成为主窗口。
+- 主窗口 ID 存为内存态 `primaryWindowId`，不写入 `chrome.storage.local`。
 - 只有主窗口里的侧边栏显示完整 workspace 管理 UI。
 - 其他窗口都是临时窗口。
 - UI 不提供 `Set as primary`，临时窗口不能直接变成主窗口。
+- 已经存在的临时窗口不会因为主窗口缺失而自动变成主窗口。
 
-Chrome 本身没有“主窗口”概念，`primaryWindowId` 是扩展自己的产品状态。
+Chrome 本身没有“主窗口”概念，`primaryWindowId` 是扩展运行时内存里的产品状态。
 
 ### 临时窗口
 
@@ -81,13 +82,12 @@ type RuntimeWorkspaceBinding = {
 
 ```ts
 type WorkspaceState = {
-  primaryWindowId?: number;
   activeWorkspaceId?: string;
   workspaces: Workspace[];
 };
 ```
 
-这份状态存到 `chrome.storage.local`。
+这份 workspace 状态存到 `chrome.storage.local`。主窗口 ID 不存储，只保存在 `WindowModel` 的内存状态里。
 
 `groupId` 和 `tabId` 不能作为长期可信数据保存。它们可以作为运行时缓存，但必须按会话级 ID 对待。
 
@@ -97,9 +97,10 @@ type WorkspaceState = {
 
 1. 使用 `chrome.windows.getCurrent()` 获取当前窗口。
 2. 读取 `WorkspaceState`。
-3. 如果没有 `primaryWindowId`，把当前窗口设为主窗口。
-4. 如果当前 `windowId === primaryWindowId`，渲染完整 workspace UI。
-5. 否则渲染临时窗口 UI。
+3. 如果当前 `windowId === primaryWindowId`，渲染完整 workspace UI。
+4. 否则渲染临时窗口 UI。
+
+如果没有 `primaryWindowId`，当前已经存在的窗口仍然按临时窗口处理。用户可以通过 `Open main window` 打开新的主窗口。
 
 完整 workspace UI 包括：
 
@@ -159,7 +160,7 @@ await chrome.windows.update(primaryWindowId, { focused: true });
 主窗口关闭后：
 
 - 保留 `workspaces` 存储数据。
-- 把 `primaryWindowId` 标记为缺失或失效。
+- 把内存里的 `primaryWindowId` 清空。
 - 已存在的其他窗口仍然是临时窗口。
 - 临时窗口侧边栏显示 `Main window is closed` 状态。
 

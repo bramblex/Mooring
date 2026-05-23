@@ -72,6 +72,19 @@ button,
   gap: 10px;
 }
 
+.temporary-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.temporary-actions p {
+  margin: 0 0 4px;
+  color: #52616f;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .group-section {
   display: flex;
   flex-direction: column;
@@ -189,6 +202,10 @@ h2 {
   body {
     color: #f5f7fa;
     background: #0f172a;
+  }
+
+  .temporary-actions p {
+    color: #cbd5e1;
   }
 
   button,
