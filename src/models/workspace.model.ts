@@ -81,6 +81,12 @@ export class WorkspaceModel {
   private groupWorkspaceIds = new Map<number, string>();
   private tabBookmarkIds = new Map<number, string>();
 
+  clearRuntimeBindings() {
+    this.workspaceGroupIds.clear();
+    this.groupWorkspaceIds.clear();
+    this.tabBookmarkIds.clear();
+  }
+
   async getState(windowId: number): Promise<WorkspaceState> {
     const root = await this.ensureRootFolder();
     const groups = await chrome.tabGroups.query({ windowId });
@@ -282,26 +288,42 @@ export class WorkspaceModel {
     }
   }
 
-  async moveTabToWorkspace(tabId: number, workspaceId: string | null, index: number, windowId: number) {
-    const moveIndex = index < 0 ? -1 : index;
+  async updatePinnedTabTitle(bookmarkId: string, title: string) {
+    await chrome.bookmarks.update(bookmarkId, {
+      title: title.trim() || "Untitled tab",
+    });
+  }
+
+  async moveTabToWorkspace(tabId: string, workspaceId: string | null, index: number, windowId: number) {
+    const parsedId = this.parseWorkspaceTabId(tabId);
+    const bookmarkId = parsedId.bookmarkId
+      || (parsedId.tabId ? this.tabBookmarkIds.get(parsedId.tabId) : undefined);
+    const openTabId = parsedId.tabId
+      || (bookmarkId ? await this.findOpenTabIdByBookmarkId(bookmarkId) : undefined);
 
     if (!workspaceId) {
-      await chrome.tabs.move(tabId, { windowId, index: moveIndex });
-      await chrome.tabs.ungroup(tabId);
+      if (!openTabId) return;
+
+      const moveIndex = await this.ungroupedChromeIndex(windowId, openTabId, index);
+      await chrome.tabs.move(openTabId, { windowId, index: moveIndex });
+      await chrome.tabs.ungroup(openTabId);
       return;
     }
 
-    await chrome.tabs.move(tabId, { windowId, index: moveIndex });
-    const groupId = await this.ensureWorkspaceGroup(workspaceId, tabId);
-    await chrome.tabs.group({ tabIds: tabId, groupId });
-
-    const bookmarkId = this.tabBookmarkIds.get(tabId);
     if (bookmarkId) {
       await chrome.bookmarks.move(bookmarkId, {
         parentId: workspaceId,
-        index: Math.max(index, 0),
+        index: await this.workspaceBookmarkIndexForDisplayIndex(workspaceId, bookmarkId, index),
       });
     }
+
+    if (!openTabId) return;
+
+    const groupId = await this.ensureWorkspaceGroup(workspaceId, openTabId);
+    const moveIndex = await this.workspaceChromeIndexForDisplayIndex(groupId, openTabId, index);
+
+    await chrome.tabs.move(openTabId, { windowId, index: moveIndex });
+    await chrome.tabs.group({ tabIds: openTabId, groupId });
   }
 
   async moveWorkspace(sourceWorkspaceId: string, targetWorkspaceId: string) {
@@ -594,13 +616,70 @@ export class WorkspaceModel {
   private async workspaceInsertIndex(groupId: number, bookmarkId: string) {
     const tabs = await chrome.tabs.query({ groupId });
     const sortedTabs = tabs.sort((a, b) => a.index - b.index);
-    if (sortedTabs.length === 0) return -1;
+    if (sortedTabs.length === 0) return 0;
 
     const bookmarks = await this.bookmarksForGroup(groupId);
     const targetOrder = bookmarks.findIndex((bookmark) => bookmark.id === bookmarkId);
-    if (targetOrder <= 0) return sortedTabs[0].index;
+    if (targetOrder < 0) return sortedTabs[0].index;
 
-    return sortedTabs[Math.min(targetOrder, sortedTabs.length - 1)]?.index ?? -1;
+    for (let index = targetOrder - 1; index >= 0; index -= 1) {
+      const tab = await this.findOpenTabByBookmarkId(bookmarks[index].id, groupId);
+      if (tab) return tab.index + 1;
+    }
+
+    for (let index = targetOrder + 1; index < bookmarks.length; index += 1) {
+      const tab = await this.findOpenTabByBookmarkId(bookmarks[index].id, groupId);
+      if (tab) return tab.index;
+    }
+
+    return sortedTabs[0].index;
+  }
+
+  private async ungroupedChromeIndex(windowId: number, movingTabId: number, displayIndex: number) {
+    if (displayIndex < 0) return -1;
+
+    const tabs = await chrome.tabs.query({ windowId });
+    const ungroupedTabs = tabs
+      .filter((tab) => tab.groupId === NO_GROUP && tab.id !== movingTabId)
+      .sort((a, b) => a.index - b.index);
+
+    return ungroupedTabs[displayIndex]?.index ?? -1;
+  }
+
+  private async workspaceChromeIndexForDisplayIndex(
+    groupId: number,
+    movingTabId: number,
+    displayIndex: number,
+  ) {
+    if (displayIndex < 0) return -1;
+
+    const tabs = await chrome.tabs.query({ groupId });
+    const sortedTabs = tabs
+      .filter((tab) => tab.id !== movingTabId)
+      .sort((a, b) => a.index - b.index);
+
+    return sortedTabs[displayIndex]?.index ?? -1;
+  }
+
+  private async workspaceBookmarkIndexForDisplayIndex(
+    workspaceId: string,
+    movingBookmarkId: string,
+    displayIndex: number,
+  ) {
+    const bookmarks = (await chrome.bookmarks.getChildren(workspaceId))
+      .filter((node) => node.url);
+
+    const filteredBookmarks = bookmarks.filter((node) => node.id !== movingBookmarkId);
+    if (displayIndex < 0) return filteredBookmarks.length;
+
+    const groupId = await this.validWorkspaceGroupId(workspaceId);
+    const openTabs = groupId === undefined ? [] : await chrome.tabs.query({ groupId });
+    const displayTabs = this
+      .buildWorkspaceTabs(bookmarks, openTabs)
+      .filter((tab) => tab.bookmarkId !== movingBookmarkId);
+    const beforeTarget = displayTabs.slice(0, displayIndex);
+
+    return beforeTarget.filter((tab) => tab.bookmarkId).length;
   }
 
   private async bookmarksForGroup(groupId: number) {
@@ -608,5 +687,15 @@ export class WorkspaceModel {
     if (!workspaceId) return [];
 
     return (await chrome.bookmarks.getChildren(workspaceId)).filter((node) => node.url);
+  }
+
+  private async findOpenTabByBookmarkId(bookmarkId: string, groupId?: number) {
+    const tabId = await this.findOpenTabIdByBookmarkId(bookmarkId);
+    if (!tabId) return undefined;
+
+    const tab = await chrome.tabs.get(tabId);
+    if (groupId !== undefined && tab.groupId !== groupId) return undefined;
+
+    return tab;
   }
 }

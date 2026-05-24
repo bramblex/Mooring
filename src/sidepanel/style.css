@@ -469,8 +469,20 @@ h2 {
   align-items: center;
   justify-content: center;
   width: 20px;
+  min-width: 20px;
   height: 20px;
+  min-height: 20px;
+  border: 0;
+  padding: 0;
+  background: transparent;
   color: var(--color-muted);
+}
+
+.tab-favicon:hover,
+.tab-favicon:focus-visible {
+  background: transparent;
+  color: var(--color-focus);
+  box-shadow: none;
 }
 
 .tab-favicon img {
@@ -489,6 +501,55 @@ h2 {
   background: transparent;
   text-align: left;
   cursor: pointer;
+}
+
+.tab-title-input {
+  overflow: hidden;
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0 4px;
+  color: inherit;
+  background: transparent;
+  text-overflow: ellipsis;
+}
+
+.tab-title-input:hover,
+.tab-title-input:focus-visible {
+  border-color: var(--color-control-border);
+  background: var(--color-control-bg);
+}
+
+.tab-title-static {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 38px;
+  padding-right: 4px;
+}
+
+.inline-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  min-height: 22px;
+  border-color: transparent;
+  padding: 0;
+  background: transparent;
+  color: var(--color-muted);
+}
+
+.inline-icon-button:hover,
+.inline-icon-button:focus-visible {
+  border-color: var(--color-control-border);
+  background: var(--color-control-hover);
+  color: var(--color-focus);
 }
 
 .tab-title-button:hover,

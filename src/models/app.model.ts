@@ -64,8 +64,13 @@ type AppMessage =
         bookmarkId?: string;
     }
     | {
+        type: "UPDATE_PINNED_TAB_TITLE";
+        bookmarkId: string;
+        title: string;
+    }
+    | {
         type: "MOVE_WORKSPACE_TAB";
-        tabId: number;
+        tabId: string;
         workspaceId: string | null;
         index: number;
         windowId?: number;
@@ -256,6 +261,9 @@ export class AppModel {
             case "UNPIN_TAB":
                 await this.workspace.unpinTab(message.tabId, message.bookmarkId);
                 return { ok: true };
+            case "UPDATE_PINNED_TAB_TITLE":
+                await this.workspace.updatePinnedTabTitle(message.bookmarkId, message.title);
+                return { ok: true };
             case "MOVE_WORKSPACE_TAB":
                 if (!message.windowId) return { ok: false };
                 await this.workspace.moveTabToWorkspace(
@@ -304,7 +312,12 @@ export class AppModel {
     }
 
     private removeWindow(id: number) {
+        const removedWindow = this.findWindow(id);
         this.windows = this.windows.filter((window) => window.id !== id);
+
+        if (removedWindow?.role === "primary") {
+            this.workspace.clearRuntimeBindings();
+        }
     }
 
     private nextWindowRole(): WindowRole {

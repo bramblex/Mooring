@@ -5,6 +5,7 @@ import {
   EyeOff,
   File,
   GripVertical,
+  Pencil,
   Plus,
   RefreshCw,
   Star,
@@ -81,10 +82,11 @@ const workspaceState = ref<WorkspaceState>({
   workspaces: [],
   ungroupedTabs: [],
 });
-const draggedTabId = ref<number | null>(null);
+const draggedTabId = ref<string | null>(null);
 const draggedWorkspaceId = ref<string | null>(null);
 const dragOverKey = ref("");
 const openColorPickerGroupId = ref<string | null>(null);
+const editingBookmarkId = ref<string | null>(null);
 const windowContext = ref<WindowContext | null>(null);
 const currentWindowId = ref<number | undefined>();
 const { t } = useI18n();
@@ -253,6 +255,25 @@ async function togglePinnedTab(workspace: WorkspaceView | null, tab: TabModel) {
   await refreshTabs();
 }
 
+async function updatePinnedTabTitle(tab: TabModel, event: Event) {
+  if (!tab.bookmarkId) return;
+
+  const target = event.target as HTMLInputElement;
+  await sendMessage({
+    type: "UPDATE_PINNED_TAB_TITLE",
+    bookmarkId: tab.bookmarkId,
+    title: target.value.trim() || t("untitledTab"),
+  });
+  editingBookmarkId.value = null;
+  await refreshTabs();
+}
+
+function editPinnedTabTitle(tab: TabModel) {
+  if (!tab.bookmarkId) return;
+
+  editingBookmarkId.value = tab.bookmarkId;
+}
+
 async function closeWorkspaceTab(tab: TabModel) {
   if (!tab.tabId) return;
 
@@ -264,12 +285,17 @@ async function closeWorkspaceTab(tab: TabModel) {
 }
 
 function onTabDragStart(tab: TabModel, event: DragEvent) {
-  if (!tab.tabId || !event.dataTransfer) return;
+  if (isEditableElement(event.target)) {
+    event.preventDefault();
+    return;
+  }
 
-  draggedTabId.value = tab.tabId;
+  if (!event.dataTransfer) return;
+
+  draggedTabId.value = tab.id;
   draggedWorkspaceId.value = null;
   event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", `tab:${tab.tabId}`);
+  event.dataTransfer.setData("text/plain", tab.id);
 }
 
 function onWorkspaceDragStart(workspace: WorkspaceView, event: DragEvent) {
@@ -316,18 +342,18 @@ async function onDrop(workspaceId: string | null, index: number, event: DragEven
   await refreshTabs();
 }
 
-function getTabDropIndex(targetTab: TabModel, event: DragEvent) {
+function getTabDropIndex(targetIndex: number, event: DragEvent) {
   const target = event.currentTarget as HTMLElement;
   const rect = target.getBoundingClientRect();
   const shouldInsertAfter = event.clientY > rect.top + rect.height / 2;
 
-  return shouldInsertAfter ? targetTab.index + 1 : targetTab.index;
+  return shouldInsertAfter ? targetIndex + 1 : targetIndex;
 }
 
-async function onTabDrop(workspaceId: string | null, targetTab: TabModel, event: DragEvent) {
+async function onTabDrop(workspaceId: string | null, targetIndex: number, event: DragEvent) {
   if (draggedWorkspaceId.value !== null) return;
 
-  await onDrop(workspaceId, getTabDropIndex(targetTab, event), event);
+  await onDrop(workspaceId, getTabDropIndex(targetIndex, event), event);
 }
 
 async function onWorkspaceDrop(targetWorkspace: WorkspaceView, event: DragEvent) {
@@ -353,6 +379,11 @@ function onDragEnd() {
 
 function toggleColorPicker(groupId: string) {
   openColorPickerGroupId.value = openColorPickerGroupId.value === groupId ? null : groupId;
+}
+
+function stopInputDrag(event: DragEvent) {
+  event.preventDefault();
+  event.stopPropagation();
 }
 
 onMounted(async () => {
@@ -461,22 +492,27 @@ onMounted(async () => {
         </div>
         <ol class="tabs">
           <li
-            v-for="tab in workspaceState.ungroupedTabs"
+            v-for="(tab, tabIndex) in workspaceState.ungroupedTabs"
             :key="tab.id"
             class="tab"
             :class="{
               active: tab.active,
-              dragging: draggedTabId === tab.tabId,
+              dragging: draggedTabId === tab.id,
               'drag-over': dragOverKey === `tab-${tab.id}`,
             }"
-            :draggable="Boolean(tab.tabId)"
-            @dragstart="onTabDragStart(tab, $event)"
             @dragover="onTabDragOver(`tab-${tab.id}`, $event)"
             @dragleave="onDragLeave(`tab-${tab.id}`)"
-            @drop="onTabDrop(null, tab, $event)"
+            @drop="onTabDrop(null, tabIndex, $event)"
             @dragend="onDragEnd"
           >
-            <span class="drag-handle" aria-hidden="true">
+            <span
+              class="drag-handle"
+              draggable="true"
+              :title="t('dragGroup')"
+              :aria-label="t('dragGroup')"
+              @dragstart="onTabDragStart(tab, $event)"
+              @dragend="onDragEnd"
+            >
               <GripVertical :size="16" />
             </span>
             <span class="tab-favicon" aria-hidden="true">
@@ -593,30 +629,53 @@ onMounted(async () => {
 
         <ol v-if="!workspace.collapsed" class="tabs">
           <li
-            v-for="tab in workspace.tabs"
+            v-for="(tab, tabIndex) in workspace.tabs"
             :key="tab.id"
             class="tab"
             :class="{
               active: tab.active,
-              dragging: draggedTabId === tab.tabId,
+              dragging: draggedTabId === tab.id,
               'drag-over': dragOverKey === `tab-${tab.id}`,
               'closed-tab': !tab.open,
             }"
-            :draggable="Boolean(tab.tabId)"
-            @dragstart="onTabDragStart(tab, $event)"
             @dragover="onTabDragOver(`tab-${tab.id}`, $event)"
             @dragleave="onDragLeave(`tab-${tab.id}`)"
-            @drop="onTabDrop(workspace.id, tab, $event)"
+            @drop="onTabDrop(workspace.id, tabIndex, $event)"
             @dragend="onDragEnd"
           >
-            <span class="drag-handle" aria-hidden="true">
+            <span
+              class="drag-handle"
+              draggable="true"
+              :title="t('dragGroup')"
+              :aria-label="t('dragGroup')"
+              @dragstart="onTabDragStart(tab, $event)"
+              @dragend="onDragEnd"
+            >
               <GripVertical :size="16" />
             </span>
-            <span class="tab-favicon" aria-hidden="true">
+            <button
+              class="tab-favicon"
+              type="button"
+              :title="tabTitle(tab)"
+              :aria-label="tabTitle(tab)"
+              @click="openWorkspaceTab(workspace, tab)"
+            >
               <img v-if="tabFavicon(tab)" :src="tabFavicon(tab)" alt="">
               <File v-else :size="16" />
-            </span>
+            </button>
+            <input
+              v-if="tab.pinned && editingBookmarkId === tab.bookmarkId"
+              class="tab-title-input"
+              :value="tabTitle(tab)"
+              :title="tabTitle(tab)"
+              :aria-label="t('bookmarkTitle')"
+              draggable="false"
+              @blur="updatePinnedTabTitle(tab, $event)"
+              @dragstart="stopInputDrag"
+              @keydown.enter="($event.target as HTMLInputElement).blur()"
+            >
             <button
+              v-else-if="!tab.pinned"
               class="tab-title-button"
               type="button"
               :title="tabTitle(tab)"
@@ -629,6 +688,30 @@ onMounted(async () => {
                 </span>
               </span>
             </button>
+            <div v-else class="tab-title-static" :title="tabTitle(tab)">
+              <button
+                class="tab-title-button"
+                type="button"
+                :title="tabTitle(tab)"
+                @click="openWorkspaceTab(workspace, tab)"
+              >
+                <span class="tab-title">
+                  {{ tabTitle(tab) }}
+                  <span v-if="tabSubtitle(tab)" class="tab-subtitle">
+                    · {{ tabSubtitle(tab) }}
+                  </span>
+                </span>
+              </button>
+              <button
+                class="inline-icon-button"
+                type="button"
+                :title="t('bookmarkTitle')"
+                :aria-label="t('bookmarkTitle')"
+                @click.stop="editPinnedTabTitle(tab)"
+              >
+                <Pencil :size="13" aria-hidden="true" />
+              </button>
+            </div>
             <div class="tab-actions">
               <Circle
                 v-if="tab.dirty"
