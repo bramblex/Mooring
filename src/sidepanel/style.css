@@ -549,6 +549,13 @@ h2 {
   padding-right: 4px;
 }
 
+.tab-title-static .tab-title-button {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  align-self: stretch;
+}
+
 .inline-icon-button {
   display: inline-flex;
   align-items: center;
