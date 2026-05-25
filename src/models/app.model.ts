@@ -79,6 +79,10 @@ type AppMessage =
         type: "MOVE_WORKSPACE";
         sourceWorkspaceId: string;
         targetWorkspaceId: string;
+    }
+    | {
+        type: "IMPORT_UNMANAGED_GROUP";
+        groupId: number;
     };
 
 export class AppModel {
@@ -281,6 +285,9 @@ export class AppModel {
                 return { ok: true };
             case "MOVE_WORKSPACE":
                 await this.workspace.moveWorkspace(message.sourceWorkspaceId, message.targetWorkspaceId);
+                return { ok: true };
+            case "IMPORT_UNMANAGED_GROUP":
+                await this.workspace.importUnmanagedGroup(message.groupId);
                 return { ok: true };
             default:
                 return { ok: false };

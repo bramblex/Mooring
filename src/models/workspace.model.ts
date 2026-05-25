@@ -262,12 +262,30 @@ export class WorkspaceModel {
       const tabs = await chrome.tabs.query({ groupId });
       const tabIds = tabs.flatMap((tab) => (tab.id ? [tab.id] : []));
       if (tabIds.length > 0) {
-        await chrome.tabs.remove(tabIds);
+        // docs/mvp-checklist.md: 删除 Workspace 不关闭用户页面；
+        // 已打开 Chrome Tabs 释放到 Unmanaged 区。
+        await chrome.tabs.ungroup(tabIds as [number, ...number[]]);
+        tabIds.forEach((tabId) => this.removeTempPageOrder(tabId));
       }
       this.groupWorkspaceIds.delete(groupId);
     }
 
     this.workspaceGroupIds.delete(workspaceId);
+  }
+
+  async importUnmanagedGroup(groupId: number) {
+    if (this.groupWorkspaceIds.has(groupId)) return;
+
+    const group = await chrome.tabGroups.get(groupId);
+    const root = await this.ensureRootFolder();
+    const folder = await chrome.bookmarks.create({
+      parentId: root.id,
+      title: formatWorkspaceTitle(group.title || DEFAULT_WORKSPACE_NAME, group.color, group.collapsed),
+    });
+
+    // docs/mvp-checklist.md: unmanaged Chrome Group 显式纳入 Harbor 时，
+    // 只创建 Workspace folder 并绑定 Group；Group 内 Chrome Tabs 保持 Temp Page。
+    this.bindWorkspace(folder.id, group.id);
   }
 
   async openWorkspacePage(workspaceId: string, pageId: string, windowId: number) {

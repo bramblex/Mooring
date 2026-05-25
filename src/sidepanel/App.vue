@@ -289,6 +289,14 @@ async function closeWorkspacePage(page: PageModel) {
   await refreshTabs();
 }
 
+async function importUnmanagedGroup(groupId: number) {
+  await sendMessage({
+    type: "IMPORT_UNMANAGED_GROUP",
+    groupId,
+  });
+  await refreshTabs();
+}
+
 function onPageDragStart(page: PageModel, event: DragEvent) {
   if (isEditableElement(event.target)) {
     event.preventDefault();
@@ -419,6 +427,11 @@ onMounted(async () => {
   chrome.tabGroups.onUpdated.addListener(refreshTabs);
   chrome.tabGroups.onMoved.addListener(refreshTabs);
   chrome.tabGroups.onRemoved.addListener(refreshTabs);
+  chrome.bookmarks.onCreated.addListener(refreshTabs);
+  chrome.bookmarks.onChanged.addListener(refreshTabs);
+  chrome.bookmarks.onMoved.addListener(refreshTabs);
+  chrome.bookmarks.onRemoved.addListener(refreshTabs);
+  chrome.bookmarks.onChildrenReordered.addListener(refreshTabs);
 });
 </script>
 
@@ -761,6 +774,15 @@ onMounted(async () => {
           <div class="unmanaged-group-title">
             <span class="color-dot" aria-hidden="true"></span>
             <span>{{ group.title }}</span>
+            <button
+              class="inline-icon-button"
+              type="button"
+              :title="t('importGroup')"
+              :aria-label="t('importGroup')"
+              @click="importUnmanagedGroup(group.id)"
+            >
+              <Plus :size="13" aria-hidden="true" />
+            </button>
           </div>
           <ol class="tabs">
             <li

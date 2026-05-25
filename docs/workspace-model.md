@@ -169,7 +169,15 @@ Harbor 在扫描主窗口时按名称和颜色尝试匹配 Workspace：
 2. 删除 Workspace 书签文件夹。
 3. 清理对应运行时 Chrome Group 绑定。
 4. Pinned Page 对应的 Bookmark 随文件夹删除。
-5. 已打开 Chrome Tab 的处理策略应显式执行：可以关闭，也可以释放到 unmanaged 区，但不能保留为 Harbor Pinned Page。
+5. 已打开 Chrome Tab 释放到 unmanaged 区，不直接关闭。
+
+### 从 Unmanaged Group 创建
+
+1. 用户显式选择 unmanaged Chrome Group。
+2. 创建 Workspace 书签文件夹。
+3. Workspace 名称和颜色来自 Chrome Group title / color。
+4. 绑定该 Chrome Group 到新 Workspace。
+5. Group 内 Chrome Tab 成为 Temp Page，不自动创建 Bookmark。
 
 ## Workspace 排序
 
