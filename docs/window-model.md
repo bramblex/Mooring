@@ -51,6 +51,7 @@ Chrome 本身没有主窗口概念，主窗口是 Harbor 自己的产品状态�
 - `Harbor Workspace` 书签目录保留不变。
 - 已存在的其他窗口仍然是临时窗口。
 - Chrome session restore 出来的 Chrome Group 不作为 Harbor 长期状态。
+- Harbor 不因为重建 runtime binding 主动拆散 Chrome Group。
 
 下一次打开主窗口或侧边栏时：
 

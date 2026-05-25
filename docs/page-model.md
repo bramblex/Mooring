@@ -158,7 +158,13 @@ Workspace 内分为两个 Page 区域：
 
 ## 排序规则
 
-Harbor 分别维护 UI 顺序、Chrome Tab 顺序和 bookmark 顺序。
+Harbor managed Page 顺序与 Chrome Tab index 脱钩。
+
+排序分为：
+
+- Pinned Page 顺序：来自 bookmark 顺序。
+- Temp Page 顺序：来自 Harbor runtime 内存顺序。
+- Unmanaged Page 顺序：来自 Chrome Tab index。
 
 ### UI 顺序
 
@@ -168,7 +174,7 @@ Harbor 分别维护 UI 顺序、Chrome Tab 顺序和 bookmark 顺序。
 
 - 关闭态 Pinned Page 没有 Chrome Tab index。
 - Pinned Page 和 Temp Page 分区不同。
-- Chrome Tab index 不能直接代表 Harbor Page 顺序。
+- Chrome Tab index 不代表 Harbor managed Page 顺序。
 
 ### Pinned Page 顺序
 
@@ -178,25 +184,26 @@ Harbor 分别维护 UI 顺序、Chrome Tab 顺序和 bookmark 顺序。
 - Pinned Page 可以拖到另一个 Workspace 的 Pinned 区。
 - 跨 Workspace 拖动时，移动对应 bookmark 到目标 Workspace 文件夹。
 - 跨 Workspace 后，该 Page 仍然是 Pinned Page，只是归属 Workspace 改为目标 Workspace。
-- 如果 Pinned Page 已绑定 Chrome Tab，同时移动 Chrome Tab。
+- 如果 Pinned Page 已绑定 Chrome Tab，只确保 Chrome Tab 位于目标 Workspace 对应 Chrome Group。
+- 不同步 Chrome Tab index。
 - 如果目标 Workspace 没有 Chrome Group，则用该 Chrome Tab 创建目标 Workspace 的 Chrome Group；关闭态 Pinned Page 跨 Workspace 移动时不创建 Chrome Tab 或 Chrome Group。
 
 ### Temp Page 顺序
 
-- 来源是 Chrome Tab 顺序。
+- 来源是 Harbor runtime 内存顺序。
 - 只影响当前运行时。
 - 不写入 bookmark。
 - 不能拖入 Pinned 区。
+- 不同步 Chrome Tab index。
 
 ## 恢复位置
 
-点击关闭态 Pinned Page 时，新 Chrome Tab 尽量恢复到 Pinned Page 的 bookmark 顺序位置：
+点击关闭态 Pinned Page 时，新 Chrome Tab 只需要进入目标 Workspace 的 Chrome Group：
 
-1. 找前面最近的已打开 Pinned Page。
-2. 找到则插到它的 Chrome Tab 后面。
-3. 否则找后面最近的已打开 Pinned Page。
-4. 找到则插到它的 Chrome Tab 前面。
-5. 都没有则放到 Workspace Chrome Group 最前面。
+1. 如果 Workspace 没有 Chrome Group，用新 Chrome Tab 创建 Chrome Group。
+2. 如果 Workspace 已有 Chrome Group，把新 Chrome Tab 加入该 Chrome Group。
+3. 不按 Pinned Page 顺序计算 Chrome Tab index。
+4. Chrome Tab 可以放在 Chrome Group 末尾。
 
 ## 拖动入口
 

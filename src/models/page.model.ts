@@ -1,17 +1,17 @@
-export type WorkspaceTabKind = "live" | "pinned";
+export type PageKind = "temp" | "pinned";
 
-export type TabModel = {
+export type PageModel = {
   id: string;
-  kind: WorkspaceTabKind;
+  kind: PageKind;
   title: string;
   currentTitle?: string;
   url?: string;
   favIconUrl?: string;
   active: boolean;
-  index: number;
+  order: number;
   pinned: boolean;
   dirty: boolean;
   open: boolean;
-  tabId?: number;
+  chromeTabId?: number;
   bookmarkId?: string;
 };

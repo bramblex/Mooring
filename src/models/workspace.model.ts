@@ -1,4 +1,4 @@
-import type { TabModel } from "./tab.model";
+import type { PageModel } from "./page.model";
 
 export type TabGroupColor = chrome.tabGroups.TabGroup["color"];
 
@@ -9,17 +9,27 @@ export type WorkspaceView = {
   order: number;
   collapsed: boolean;
   groupId?: number;
-  tabs: TabModel[];
+  pages: PageModel[];
 };
 
 export type WorkspaceState = {
   workspaces: WorkspaceView[];
-  ungroupedTabs: TabModel[];
+  unmanagedPages: PageModel[];
+  unmanagedGroups: UnmanagedGroupView[];
+};
+
+export type UnmanagedGroupView = {
+  id: number;
+  title: string;
+  color: TabGroupColor;
+  collapsed: boolean;
+  pages: PageModel[];
 };
 
 type ParsedWorkspaceTitle = {
   name: string;
   color: TabGroupColor;
+  collapsed: boolean;
 };
 
 type WorkspaceFolder = ParsedWorkspaceTitle & {
@@ -31,7 +41,7 @@ const ROOT_FOLDER_TITLE = "Harbor Workspace";
 const DEFAULT_WORKSPACE_NAME = "Untitled workspace";
 const DEFAULT_WORKSPACE_COLOR: TabGroupColor = "grey";
 const NO_GROUP = chrome.tabGroups.TAB_GROUP_ID_NONE;
-const WORKSPACE_TITLE_RE = /^\[(grey|blue|red|yellow|green|pink|purple|cyan|orange)\]\s*(.*)$/;
+const WORKSPACE_TITLE_RE = /^\[(grey|blue|red|yellow|green|pink|purple|cyan|orange)(?::(shown|hidden))?\]\s*(.*)$/;
 
 const BOOKMARK_BAR_ID = "1";
 
@@ -42,28 +52,31 @@ function parseWorkspaceTitle(title: string): ParsedWorkspaceTitle {
     return {
       name: title || DEFAULT_WORKSPACE_NAME,
       color: DEFAULT_WORKSPACE_COLOR,
+      collapsed: false,
     };
   }
 
   return {
     color: match[1] as TabGroupColor,
-    name: match[2] || DEFAULT_WORKSPACE_NAME,
+    collapsed: match[2] === "hidden",
+    name: match[3] || DEFAULT_WORKSPACE_NAME,
   };
 }
 
-function formatWorkspaceTitle(name: string, color: TabGroupColor) {
-  return `[${color}] ${name.trim() || DEFAULT_WORKSPACE_NAME}`;
+function formatWorkspaceTitle(name: string, color: TabGroupColor, collapsed = false) {
+  const state = collapsed ? ":hidden" : "";
+  return `[${color}${state}] ${name.trim() || DEFAULT_WORKSPACE_NAME}`;
 }
 
-function tabTitle(tab: chrome.tabs.Tab) {
-  return tab.title || tab.url || "Untitled tab";
+function chromeTabTitle(tab: chrome.tabs.Tab) {
+  return tab.title || tab.url || "Untitled page";
 }
 
 function bookmarkTitle(bookmark: chrome.bookmarks.BookmarkTreeNode) {
-  return bookmark.title || bookmark.url || "Untitled tab";
+  return bookmark.title || bookmark.url || "Untitled page";
 }
 
-function tabUrl(tab: chrome.tabs.Tab) {
+function chromeTabUrl(tab: chrome.tabs.Tab) {
   return tab.url || tab.pendingUrl || "";
 }
 
@@ -72,61 +85,112 @@ function bookmarkKey(bookmark: chrome.bookmarks.BookmarkTreeNode) {
 }
 
 function canBookmarkTab(tab: chrome.tabs.Tab) {
-  const url = tabUrl(tab);
+  const url = chromeTabUrl(tab);
   return Boolean(url && !url.startsWith("chrome://") && !url.startsWith("chrome-extension://"));
 }
 
 export class WorkspaceModel {
   private workspaceGroupIds = new Map<string, number>();
   private groupWorkspaceIds = new Map<number, string>();
-  private tabBookmarkIds = new Map<number, string>();
+  private chromeTabBookmarkIds = new Map<number, string>();
+  private workspaceTempPageOrders = new Map<string, number[]>();
+  private shouldRebuildRuntimeBindings = false;
 
   clearRuntimeBindings() {
     this.workspaceGroupIds.clear();
     this.groupWorkspaceIds.clear();
-    this.tabBookmarkIds.clear();
+    this.chromeTabBookmarkIds.clear();
+    this.workspaceTempPageOrders.clear();
+    this.markRuntimeBindingsRebuildNeeded();
+  }
+
+  markRuntimeBindingsRebuildNeeded() {
+    this.shouldRebuildRuntimeBindings = true;
   }
 
   async getState(windowId: number): Promise<WorkspaceState> {
     const root = await this.ensureRootFolder();
-    const groups = await chrome.tabGroups.query({ windowId });
-    const tabs = await chrome.tabs.query({ windowId });
-    await this.ensureFoldersForGroups(root.id, groups);
+    let groups = await chrome.tabGroups.query({ windowId });
+    let tabs = await chrome.tabs.query({ windowId });
+
+    if (this.shouldRebuildRuntimeBindings) {
+      // docs/window-model.md: 主窗口关闭或重启后清空 runtime binding，
+      // Bookmark 保留；不主动拆散 Chrome Group。
+      this.clearRuntimeBindingsWithoutCleanup();
+      this.shouldRebuildRuntimeBindings = false;
+      groups = await chrome.tabGroups.query({ windowId });
+      tabs = await chrome.tabs.query({ windowId });
+    }
+
     const freshFolders = await this.listWorkspaceFolders(root.id);
 
     this.pruneBindings(groups);
     this.bindKnownGroups(freshFolders, groups);
+    await this.mergeDuplicateMatchedGroups(freshFolders, groups);
+    groups = await chrome.tabGroups.query({ windowId });
+    tabs = await chrome.tabs.query({ windowId });
+    this.pruneBindings(groups);
 
     const workspaces = await Promise.all(
       freshFolders.map(async (folder) => {
         const groupId = this.workspaceGroupIds.get(folder.id);
 
         const group = groupId === undefined ? undefined : groups.find((item) => item.id === groupId);
+        if (group && group.collapsed !== folder.collapsed) {
+          await chrome.tabGroups.update(group.id, { collapsed: folder.collapsed });
+        }
         const groupTabs = groupId === undefined
           ? []
           : tabs.filter((tab) => tab.groupId === groupId).sort((a, b) => a.index - b.index);
         const bookmarks = (await chrome.bookmarks.getChildren(folder.id)).filter((node) => node.url);
+
+        const pages = this.buildWorkspacePages(folder.id, bookmarks, groupTabs);
 
         return {
           id: folder.id,
           name: folder.name,
           color: folder.color,
           order: folder.index,
-          collapsed: Boolean(group?.collapsed),
+          collapsed: folder.collapsed,
           groupId,
-          tabs: this.buildWorkspaceTabs(bookmarks, groupTabs),
+          pages,
         };
       }),
     );
 
-    const ungroupedTabs = tabs
+    const managedGroupIds = new Set(this.workspaceGroupIds.values());
+    const unmanagedGroupsWithIndex = await Promise.all(
+      groups
+        .filter((group) => !managedGroupIds.has(group.id))
+        .map(async (group) => {
+          const groupTabs = (await chrome.tabs.query({ groupId: group.id }))
+            .sort((a, b) => a.index - b.index);
+
+          return {
+            firstIndex: groupTabs[0]?.index ?? Number.MAX_SAFE_INTEGER,
+            group: {
+              id: group.id,
+              title: group.title || DEFAULT_WORKSPACE_NAME,
+              color: group.color,
+              collapsed: group.collapsed,
+              pages: groupTabs.map((tab) => this.tempPageModel(tab, false)),
+            },
+          };
+        }),
+    );
+    const unmanagedGroups = unmanagedGroupsWithIndex
+      .sort((a, b) => a.firstIndex - b.firstIndex)
+      .map((item) => item.group);
+
+    const unmanagedPages = tabs
       .filter((tab) => tab.groupId === NO_GROUP)
       .sort((a, b) => a.index - b.index)
-      .map((tab) => this.liveTabModel(tab, false));
+      .map((tab) => this.tempPageModel(tab, false));
 
     return {
       workspaces,
-      ungroupedTabs,
+      unmanagedPages,
+      unmanagedGroups,
     };
   }
 
@@ -134,21 +198,12 @@ export class WorkspaceModel {
     const root = await this.ensureRootFolder();
     const folder = await chrome.bookmarks.create({
       parentId: root.id,
-      title: formatWorkspaceTitle(DEFAULT_WORKSPACE_NAME, DEFAULT_WORKSPACE_COLOR),
-    });
-    const tab = await chrome.tabs.create({
-      windowId,
-      active: true,
+      title: formatWorkspaceTitle(DEFAULT_WORKSPACE_NAME, DEFAULT_WORKSPACE_COLOR, false),
     });
 
-    if (!tab.id) return folder.id;
-
-    const groupId = await chrome.tabs.group({ tabIds: tab.id });
-    await chrome.tabGroups.update(groupId, {
-      title: DEFAULT_WORKSPACE_NAME,
-      color: DEFAULT_WORKSPACE_COLOR,
-    });
-    this.bindWorkspace(folder.id, groupId);
+    // docs/workspace-model.md: 创建空 Workspace 只创建 Bookmark 文件夹，
+    // 不立即创建 Chrome Tab 或 Chrome Group。
+    void windowId;
     return folder.id;
   }
 
@@ -158,7 +213,7 @@ export class WorkspaceModel {
     const nextName = name.trim() || DEFAULT_WORKSPACE_NAME;
 
     await chrome.bookmarks.update(workspaceId, {
-      title: formatWorkspaceTitle(nextName, parsed.color),
+      title: formatWorkspaceTitle(nextName, parsed.color, parsed.collapsed),
     });
 
     const groupId = this.workspaceGroupIds.get(workspaceId);
@@ -172,7 +227,7 @@ export class WorkspaceModel {
     const parsed = parseWorkspaceTitle(folder.title);
 
     await chrome.bookmarks.update(workspaceId, {
-      title: formatWorkspaceTitle(parsed.name, color),
+      title: formatWorkspaceTitle(parsed.name, color, parsed.collapsed),
     });
 
     const groupId = this.workspaceGroupIds.get(workspaceId);
@@ -182,11 +237,20 @@ export class WorkspaceModel {
   }
 
   async toggleWorkspace(workspaceId: string) {
+    const folder = await this.getWorkspaceFolder(workspaceId);
+    const parsed = parseWorkspaceTitle(folder.title);
+    const collapsed = !parsed.collapsed;
+
+    // docs/workspace-model.md: Workspace 显示/隐藏状态和颜色一样写在
+    // Workspace Bookmark folder title 上；没有 Chrome Group 时也能切换。
+    await chrome.bookmarks.update(workspaceId, {
+      title: formatWorkspaceTitle(parsed.name, parsed.color, collapsed),
+    });
+
     const groupId = this.workspaceGroupIds.get(workspaceId);
     if (groupId === undefined) return;
 
-    const group = await chrome.tabGroups.get(groupId);
-    await chrome.tabGroups.update(groupId, { collapsed: !group.collapsed });
+    await chrome.tabGroups.update(groupId, { collapsed });
   }
 
   async deleteWorkspace(workspaceId: string) {
@@ -206,124 +270,133 @@ export class WorkspaceModel {
     this.workspaceGroupIds.delete(workspaceId);
   }
 
-  async openWorkspaceTab(workspaceId: string, tabId: string, windowId: number) {
-    const parsedId = this.parseWorkspaceTabId(tabId);
+  async openWorkspacePage(workspaceId: string, pageId: string, windowId: number) {
+    const parsedId = this.parsePageId(pageId);
 
-    if (parsedId.tabId && await this.tabExists(parsedId.tabId)) {
-      await chrome.tabs.update(parsedId.tabId, { active: true });
+    if (parsedId.chromeTabId && await this.chromeTabExists(parsedId.chromeTabId)) {
+      await chrome.tabs.update(parsedId.chromeTabId, { active: true });
       return;
     }
 
     const bookmarkId = parsedId.bookmarkId;
     if (!bookmarkId) return;
 
-    const openTabId = await this.findOpenTabIdByBookmarkId(bookmarkId);
-    if (openTabId) {
-      await chrome.tabs.update(openTabId, { active: true });
+    const openChromeTabId = await this.findOpenChromeTabIdByBookmarkId(bookmarkId);
+    if (openChromeTabId) {
+      await chrome.tabs.update(openChromeTabId, { active: true });
       return;
     }
 
     const [bookmark] = await chrome.bookmarks.get(bookmarkId);
     if (!bookmark?.url) return;
 
-    const existingGroupId = await this.validWorkspaceGroupId(workspaceId);
-    const index = existingGroupId === undefined ? undefined : await this.workspaceInsertIndex(existingGroupId, bookmarkId);
     const createProperties: chrome.tabs.CreateProperties = {
       windowId,
       url: bookmark.url,
       active: true,
     };
 
-    if (index !== undefined) {
-      createProperties.index = index;
-    }
-
     const tab = await chrome.tabs.create(createProperties);
 
     if (!tab.id) return;
 
+    // docs/page-model.md: 关闭态 Pinned Page 被点击时才创建 Chrome Tab，
+    // 并按 Workspace 的运行时投影创建或加入 Chrome Group。
     const groupId = await this.ensureWorkspaceGroup(workspaceId, tab.id);
     const restoredTab = await chrome.tabs.get(tab.id);
     if (restoredTab.groupId !== groupId) {
       await chrome.tabs.group({ tabIds: tab.id, groupId });
     }
-    this.tabBookmarkIds.set(tab.id, bookmarkId);
+    this.chromeTabBookmarkIds.set(tab.id, bookmarkId);
   }
 
-  async closeWorkspaceTab(tabId: number) {
-    await chrome.tabs.remove(tabId);
-    this.tabBookmarkIds.delete(tabId);
+  async closeWorkspacePage(chromeTabId: number) {
+    await chrome.tabs.remove(chromeTabId);
+    this.chromeTabBookmarkIds.delete(chromeTabId);
   }
 
-  async pinTab(workspaceId: string, tabId: number) {
-    const tab = await chrome.tabs.get(tabId);
+  async pinPage(workspaceId: string, chromeTabId: number) {
+    const tab = await chrome.tabs.get(chromeTabId);
     if (!canBookmarkTab(tab)) return;
 
-    const existingBookmarkId = this.tabBookmarkIds.get(tabId);
+    const existingBookmarkId = this.chromeTabBookmarkIds.get(chromeTabId);
     if (existingBookmarkId) return;
 
+    // docs/page-model.md: Temp Page 固定时创建 Bookmark，并继续绑定当前 Chrome Tab。
     const bookmark = await chrome.bookmarks.create({
       parentId: workspaceId,
-      title: tabTitle(tab),
-      url: tabUrl(tab),
+      title: chromeTabTitle(tab),
+      url: chromeTabUrl(tab),
     });
-    this.tabBookmarkIds.set(tabId, bookmark.id);
+    this.chromeTabBookmarkIds.set(chromeTabId, bookmark.id);
   }
 
-  async unpinTab(tabId?: number, bookmarkId?: string) {
-    const resolvedBookmarkId = bookmarkId || (tabId ? this.tabBookmarkIds.get(tabId) : undefined);
+  async unpinPage(chromeTabId?: number, bookmarkId?: string) {
+    const resolvedBookmarkId = bookmarkId || (chromeTabId ? this.chromeTabBookmarkIds.get(chromeTabId) : undefined);
     if (!resolvedBookmarkId) return;
 
+    // docs/page-model.md: 取消固定只删除 Bookmark，不关闭仍然打开的 Chrome Tab。
     await chrome.bookmarks.remove(resolvedBookmarkId);
 
-    if (tabId) {
-      this.tabBookmarkIds.delete(tabId);
+    if (chromeTabId) {
+      this.chromeTabBookmarkIds.delete(chromeTabId);
       return;
     }
 
-    for (const [openTabId, openBookmarkId] of this.tabBookmarkIds.entries()) {
+    for (const [openTabId, openBookmarkId] of this.chromeTabBookmarkIds.entries()) {
       if (openBookmarkId === resolvedBookmarkId) {
-        this.tabBookmarkIds.delete(openTabId);
+        this.chromeTabBookmarkIds.delete(openTabId);
+        await this.appendTempPageOrderForTab(openTabId);
       }
     }
   }
 
-  async updatePinnedTabTitle(bookmarkId: string, title: string) {
+  async updatePinnedPageTitle(bookmarkId: string, title: string) {
     await chrome.bookmarks.update(bookmarkId, {
-      title: title.trim() || "Untitled tab",
+      title: title.trim() || "Untitled page",
     });
   }
 
-  async moveTabToWorkspace(tabId: string, workspaceId: string | null, index: number, windowId: number) {
-    const parsedId = this.parseWorkspaceTabId(tabId);
+  async movePageToWorkspace(pageId: string, workspaceId: string | null, index: number, windowId: number) {
+    const parsedId = this.parsePageId(pageId);
     const bookmarkId = parsedId.bookmarkId
-      || (parsedId.tabId ? this.tabBookmarkIds.get(parsedId.tabId) : undefined);
-    const openTabId = parsedId.tabId
-      || (bookmarkId ? await this.findOpenTabIdByBookmarkId(bookmarkId) : undefined);
+      || (parsedId.chromeTabId ? this.chromeTabBookmarkIds.get(parsedId.chromeTabId) : undefined);
+    const openChromeTabId = parsedId.chromeTabId
+      || (bookmarkId ? await this.findOpenChromeTabIdByBookmarkId(bookmarkId) : undefined);
 
     if (!workspaceId) {
-      if (!openTabId) return;
+      // docs/page-model.md: Pinned Page 不进入 Temp Page 区；
+      // 拖到 unmanaged 只对没有 Bookmark 的 Temp Page 生效。
+      if (bookmarkId) return;
+      if (!openChromeTabId) return;
 
-      const moveIndex = await this.ungroupedChromeIndex(windowId, openTabId, index);
-      await chrome.tabs.move(openTabId, { windowId, index: moveIndex });
-      await chrome.tabs.ungroup(openTabId);
+      const moveIndex = await this.ungroupedChromeIndex(windowId, openChromeTabId, index);
+      this.removeTempPageOrder(openChromeTabId);
+      await chrome.tabs.move(openChromeTabId, { windowId, index: moveIndex });
+      await chrome.tabs.ungroup(openChromeTabId);
       return;
     }
 
     if (bookmarkId) {
+      // docs/page-model.md: Pinned Page 跨 Workspace 拖动时移动 Bookmark，
+      // 移动后仍然是目标 Workspace 的 Pinned Page。
       await chrome.bookmarks.move(bookmarkId, {
         parentId: workspaceId,
-        index: await this.workspaceBookmarkIndexForDisplayIndex(workspaceId, bookmarkId, index),
+        index: await this.pinnedBookmarkIndexForDisplayIndex(workspaceId, bookmarkId, index),
       });
     }
 
-    if (!openTabId) return;
+    if (!openChromeTabId) return;
 
-    const groupId = await this.ensureWorkspaceGroup(workspaceId, openTabId);
-    const moveIndex = await this.workspaceChromeIndexForDisplayIndex(groupId, openTabId, index);
+    const groupId = await this.ensureWorkspaceGroup(workspaceId, openChromeTabId);
 
-    await chrome.tabs.move(openTabId, { windowId, index: moveIndex });
-    await chrome.tabs.group({ tabIds: openTabId, groupId });
+    // docs/产品逻辑文档.md: Harbor managed Page 顺序与 Chrome Tab index 脱钩；
+    // 这里只确保 Chrome Tab 进入目标 Workspace 的 Chrome Group。
+    await chrome.tabs.group({ tabIds: openChromeTabId, groupId });
+
+    if (!bookmarkId) {
+      await this.moveTempPageOrder(workspaceId, openChromeTabId, index);
+    }
   }
 
   async moveWorkspace(sourceWorkspaceId: string, targetWorkspaceId: string) {
@@ -336,16 +409,6 @@ export class WorkspaceModel {
       parentId: root.id,
       index: targetFolder.index,
     });
-
-    const sourceGroupId = this.workspaceGroupIds.get(sourceWorkspaceId);
-    const targetGroupId = this.workspaceGroupIds.get(targetWorkspaceId);
-    if (sourceGroupId === undefined || targetGroupId === undefined) return;
-
-    const targetTabs = await chrome.tabs.query({ groupId: targetGroupId });
-    const targetIndex = targetTabs.sort((a, b) => a.index - b.index)[0]?.index;
-    if (targetIndex !== undefined) {
-      await chrome.tabGroups.move(sourceGroupId, { index: targetIndex });
-    }
   }
 
   private async ensureRootFolder() {
@@ -384,32 +447,11 @@ export class WorkspaceModel {
       }));
   }
 
-  private async ensureFoldersForGroups(rootId: string, groups: chrome.tabGroups.TabGroup[]) {
-    const folders = await this.listWorkspaceFolders(rootId);
-    const unmatchedFolders = [...folders];
-
-    for (const group of groups) {
-      if (this.groupWorkspaceIds.has(group.id)) continue;
-
-      const title = group.title || DEFAULT_WORKSPACE_NAME;
-      const matchedFolderIndex = unmatchedFolders.findIndex(
-        (folder) => folder.name === title && folder.color === group.color,
-      );
-
-      if (matchedFolderIndex >= 0) {
-        const [folder] = unmatchedFolders.splice(matchedFolderIndex, 1);
-        this.bindWorkspace(folder.id, group.id);
-        continue;
-      }
-
-      const folder = await chrome.bookmarks.create({
-        parentId: rootId,
-        title: formatWorkspaceTitle(title, group.color),
-      });
-      this.bindWorkspace(folder.id, group.id);
-    }
-
-    return this.listWorkspaceFolders(rootId);
+  private clearRuntimeBindingsWithoutCleanup() {
+    this.workspaceGroupIds.clear();
+    this.groupWorkspaceIds.clear();
+    this.chromeTabBookmarkIds.clear();
+    this.workspaceTempPageOrders.clear();
   }
 
   private bindKnownGroups(folders: WorkspaceFolder[], groups: chrome.tabGroups.TabGroup[]) {
@@ -430,6 +472,36 @@ export class WorkspaceModel {
         this.bindWorkspace(folder.id, group.id);
       }
     });
+  }
+
+  private async mergeDuplicateMatchedGroups(
+    folders: WorkspaceFolder[],
+    groups: chrome.tabGroups.TabGroup[],
+  ) {
+    for (const folder of folders) {
+      const boundGroupId = this.workspaceGroupIds.get(folder.id);
+      if (boundGroupId === undefined) continue;
+
+      const duplicateGroups = groups.filter((group) => {
+        if (group.id === boundGroupId) return false;
+        if (this.groupWorkspaceIds.has(group.id)) return false;
+        return this.workspaceMatchKey(group.title || DEFAULT_WORKSPACE_NAME, group.color)
+          === this.workspaceMatchKey(folder.name, folder.color);
+      });
+
+      for (const group of duplicateGroups) {
+        const tabs = await chrome.tabs.query({ groupId: group.id });
+        const tabIds = tabs.flatMap((tab) => (tab.id ? [tab.id] : []));
+        if (tabIds.length === 0) continue;
+
+        // docs/产品逻辑文档.md: Chrome 创建或恢复的 Group 匹配已打开 Workspace 时，
+        // 把该 Chrome Group 内 Chrome Tabs 合并进 Workspace 已绑定的 Chrome Group。
+        await chrome.tabs.group({
+          tabIds: tabIds as [number, ...number[]],
+          groupId: boundGroupId,
+        });
+      }
+    }
   }
 
   private pruneBindings(groups: chrome.tabGroups.TabGroup[]) {
@@ -462,25 +534,26 @@ export class WorkspaceModel {
     this.groupWorkspaceIds.set(groupId, workspaceId);
   }
 
-  private buildWorkspaceTabs(
+  private buildWorkspacePages(
+    workspaceId: string,
     bookmarks: chrome.bookmarks.BookmarkTreeNode[],
     openTabs: chrome.tabs.Tab[],
-  ): TabModel[] {
+  ): PageModel[] {
     const tabsByBookmarkId = new Map<string, chrome.tabs.Tab>();
     const usedTabIds = new Set<number>();
 
     openTabs.forEach((tab) => {
       if (!tab.id) return;
 
-      const bookmarkId = this.tabBookmarkIds.get(tab.id);
+      const bookmarkId = this.chromeTabBookmarkIds.get(tab.id);
       if (bookmarkId) {
         tabsByBookmarkId.set(bookmarkId, tab);
         return;
       }
 
-      const matchingBookmark = bookmarks.find((bookmark) => bookmarkKey(bookmark) === tabUrl(tab));
+      const matchingBookmark = bookmarks.find((bookmark) => bookmarkKey(bookmark) === chromeTabUrl(tab));
       if (matchingBookmark) {
-        this.tabBookmarkIds.set(tab.id, matchingBookmark.id);
+        this.chromeTabBookmarkIds.set(tab.id, matchingBookmark.id);
         tabsByBookmarkId.set(matchingBookmark.id, tab);
       }
     });
@@ -489,61 +562,75 @@ export class WorkspaceModel {
       const tab = tabsByBookmarkId.get(bookmark.id);
       if (tab?.id) usedTabIds.add(tab.id);
 
-      return this.pinnedTabModel(bookmark, tab, index);
+      return this.pinnedPageModel(bookmark, tab, index);
     });
 
-    const liveTabs = openTabs
-      .filter((tab) => tab.id && !usedTabIds.has(tab.id))
-      .map((tab) => this.liveTabModel(tab, false));
+    const tempTabs = openTabs.filter((tab) => tab.id && !usedTabIds.has(tab.id));
+    const tempOrder = this.reconcileTempPageOrder(
+      workspaceId,
+      tempTabs.flatMap((tab) => (tab.id ? [tab.id] : [])),
+    );
+    const tempPages = tempTabs
+      .sort((a, b) => {
+        const aOrder = a.id ? tempOrder.indexOf(a.id) : -1;
+        const bOrder = b.id ? tempOrder.indexOf(b.id) : -1;
+        return (aOrder >= 0 ? aOrder : a.index) - (bOrder >= 0 ? bOrder : b.index);
+      })
+      .map((tab, index) => ({
+        ...this.tempPageModel(tab, false),
+        order: bookmarks.length + index,
+      }));
 
-    return [...pinnedTabs, ...liveTabs].sort((a, b) => a.index - b.index);
+    // docs/page-model.md: Pinned Page 永远在 Workspace 上半区，
+    // Temp Page 永远在 Workspace 下半区；Temp Page 顺序来自 Harbor runtime 内存顺序。
+    return [...pinnedTabs, ...tempPages];
   }
 
-  private pinnedTabModel(
+  private pinnedPageModel(
     bookmark: chrome.bookmarks.BookmarkTreeNode,
     tab: chrome.tabs.Tab | undefined,
     index: number,
-  ): TabModel {
-    const openUrl = tab ? tabUrl(tab) : "";
+  ): PageModel {
+    const openUrl = tab ? chromeTabUrl(tab) : "";
     const dirty = Boolean(tab && bookmark.url && openUrl && bookmark.url !== openUrl);
 
     return {
       id: `bookmark:${bookmark.id}`,
       kind: "pinned",
       title: bookmarkTitle(bookmark),
-      currentTitle: dirty && tab ? tabTitle(tab) : undefined,
+      currentTitle: dirty && tab ? chromeTabTitle(tab) : undefined,
       url: bookmark.url,
       favIconUrl: tab?.favIconUrl,
       active: Boolean(tab?.active),
-      index: tab?.index ?? index,
+      order: index,
       pinned: true,
       dirty,
       open: Boolean(tab),
-      tabId: tab?.id,
+      chromeTabId: tab?.id,
       bookmarkId: bookmark.id,
     };
   }
 
-  private liveTabModel(tab: chrome.tabs.Tab, pinned: boolean): TabModel {
+  private tempPageModel(tab: chrome.tabs.Tab, pinned: boolean): PageModel {
     return {
-      id: `tab:${tab.id}`,
-      kind: "live",
-      title: tabTitle(tab),
-      url: tabUrl(tab),
+      id: `chrome-tab:${tab.id}`,
+      kind: "temp",
+      title: chromeTabTitle(tab),
+      url: chromeTabUrl(tab),
       favIconUrl: tab.favIconUrl,
       active: Boolean(tab.active),
-      index: tab.index,
+      order: tab.index,
       pinned,
       dirty: false,
       open: true,
-      tabId: tab.id,
+      chromeTabId: tab.id,
     };
   }
 
-  private parseWorkspaceTabId(id: string) {
-    if (id.startsWith("tab:")) {
+  private parsePageId(id: string) {
+    if (id.startsWith("chrome-tab:")) {
       return {
-        tabId: Number(id.replace("tab:", "")),
+        chromeTabId: Number(id.replace("chrome-tab:", "")),
       };
     }
 
@@ -556,7 +643,7 @@ export class WorkspaceModel {
     return {};
   }
 
-  private async tabExists(tabId: number) {
+  private async chromeTabExists(tabId: number) {
     try {
       await chrome.tabs.get(tabId);
       return true;
@@ -565,12 +652,12 @@ export class WorkspaceModel {
     }
   }
 
-  private async findOpenTabIdByBookmarkId(bookmarkId: string) {
-    for (const [tabId, boundBookmarkId] of this.tabBookmarkIds.entries()) {
+  private async findOpenChromeTabIdByBookmarkId(bookmarkId: string) {
+    for (const [tabId, boundBookmarkId] of this.chromeTabBookmarkIds.entries()) {
       if (boundBookmarkId !== bookmarkId) continue;
-      if (await this.tabExists(tabId)) return tabId;
+      if (await this.chromeTabExists(tabId)) return tabId;
 
-      this.tabBookmarkIds.delete(tabId);
+      this.chromeTabBookmarkIds.delete(tabId);
     }
 
     return undefined;
@@ -588,6 +675,7 @@ export class WorkspaceModel {
     await chrome.tabGroups.update(groupId, {
       title: parsed.name,
       color: parsed.color,
+      collapsed: parsed.collapsed,
     });
     this.bindWorkspace(workspaceId, groupId);
     return groupId;
@@ -613,55 +701,18 @@ export class WorkspaceModel {
     return undefined;
   }
 
-  private async workspaceInsertIndex(groupId: number, bookmarkId: string) {
-    const tabs = await chrome.tabs.query({ groupId });
-    const sortedTabs = tabs.sort((a, b) => a.index - b.index);
-    if (sortedTabs.length === 0) return 0;
-
-    const bookmarks = await this.bookmarksForGroup(groupId);
-    const targetOrder = bookmarks.findIndex((bookmark) => bookmark.id === bookmarkId);
-    if (targetOrder < 0) return sortedTabs[0].index;
-
-    for (let index = targetOrder - 1; index >= 0; index -= 1) {
-      const tab = await this.findOpenTabByBookmarkId(bookmarks[index].id, groupId);
-      if (tab) return tab.index + 1;
-    }
-
-    for (let index = targetOrder + 1; index < bookmarks.length; index += 1) {
-      const tab = await this.findOpenTabByBookmarkId(bookmarks[index].id, groupId);
-      if (tab) return tab.index;
-    }
-
-    return sortedTabs[0].index;
-  }
-
   private async ungroupedChromeIndex(windowId: number, movingTabId: number, displayIndex: number) {
     if (displayIndex < 0) return -1;
 
     const tabs = await chrome.tabs.query({ windowId });
-    const ungroupedTabs = tabs
+    const unmanagedChromeTabs = tabs
       .filter((tab) => tab.groupId === NO_GROUP && tab.id !== movingTabId)
       .sort((a, b) => a.index - b.index);
 
-    return ungroupedTabs[displayIndex]?.index ?? -1;
+    return unmanagedChromeTabs[displayIndex]?.index ?? -1;
   }
 
-  private async workspaceChromeIndexForDisplayIndex(
-    groupId: number,
-    movingTabId: number,
-    displayIndex: number,
-  ) {
-    if (displayIndex < 0) return -1;
-
-    const tabs = await chrome.tabs.query({ groupId });
-    const sortedTabs = tabs
-      .filter((tab) => tab.id !== movingTabId)
-      .sort((a, b) => a.index - b.index);
-
-    return sortedTabs[displayIndex]?.index ?? -1;
-  }
-
-  private async workspaceBookmarkIndexForDisplayIndex(
+  private async pinnedBookmarkIndexForDisplayIndex(
     workspaceId: string,
     movingBookmarkId: string,
     displayIndex: number,
@@ -672,30 +723,67 @@ export class WorkspaceModel {
     const filteredBookmarks = bookmarks.filter((node) => node.id !== movingBookmarkId);
     if (displayIndex < 0) return filteredBookmarks.length;
 
+    return Math.min(displayIndex, filteredBookmarks.length);
+  }
+
+  private async moveTempPageOrder(workspaceId: string, chromeTabId: number, displayIndex: number) {
+    this.removeTempPageOrder(chromeTabId);
+
+    const bookmarks = (await chrome.bookmarks.getChildren(workspaceId)).filter((node) => node.url);
+    const targetTempIndex = displayIndex < 0
+      ? Number.POSITIVE_INFINITY
+      : Math.max(0, displayIndex - bookmarks.length);
     const groupId = await this.validWorkspaceGroupId(workspaceId);
-    const openTabs = groupId === undefined ? [] : await chrome.tabs.query({ groupId });
-    const displayTabs = this
-      .buildWorkspaceTabs(bookmarks, openTabs)
-      .filter((tab) => tab.bookmarkId !== movingBookmarkId);
-    const beforeTarget = displayTabs.slice(0, displayIndex);
+    const groupTabs = groupId === undefined ? [] : await chrome.tabs.query({ groupId });
+    const tempTabIds = groupTabs
+      .flatMap((tab) => (tab.id && !this.chromeTabBookmarkIds.get(tab.id) ? [tab.id] : []));
+    if (!tempTabIds.includes(chromeTabId)) {
+      tempTabIds.push(chromeTabId);
+    }
+    const order = this.reconcileTempPageOrder(workspaceId, tempTabIds)
+      .filter((id) => id !== chromeTabId);
 
-    return beforeTarget.filter((tab) => tab.bookmarkId).length;
+    order.splice(Math.min(targetTempIndex, order.length), 0, chromeTabId);
+    this.workspaceTempPageOrders.set(workspaceId, order);
   }
 
-  private async bookmarksForGroup(groupId: number) {
-    const workspaceId = this.groupWorkspaceIds.get(groupId);
-    if (!workspaceId) return [];
+  private reconcileTempPageOrder(
+    workspaceId: string,
+    chromeTabIds: number[],
+  ) {
+    const validIds = new Set(chromeTabIds);
+    const previousOrder = this.workspaceTempPageOrders.get(workspaceId) || [];
+    const nextOrder = previousOrder.filter((id) => validIds.has(id));
 
-    return (await chrome.bookmarks.getChildren(workspaceId)).filter((node) => node.url);
+    chromeTabIds.forEach((id) => {
+      if (!nextOrder.includes(id)) {
+        nextOrder.push(id);
+      }
+    });
+
+    this.workspaceTempPageOrders.set(workspaceId, nextOrder);
+    return nextOrder;
   }
 
-  private async findOpenTabByBookmarkId(bookmarkId: string, groupId?: number) {
-    const tabId = await this.findOpenTabIdByBookmarkId(bookmarkId);
-    if (!tabId) return undefined;
+  private async appendTempPageOrderForTab(chromeTabId: number) {
+    // docs/page-model.md: Pinned Page 取消固定后，如果 Chrome Tab 仍打开，
+    // 它变成 Temp Page；Temp Page 顺序进入 Harbor runtime 内存顺序末尾。
+    const tab = await chrome.tabs.get(chromeTabId).catch(() => undefined);
+    if (!tab) return;
 
-    const tab = await chrome.tabs.get(tabId);
-    if (groupId !== undefined && tab.groupId !== groupId) return undefined;
+    const workspaceId = this.groupWorkspaceIds.get(tab.groupId);
+    if (!workspaceId) return;
 
-    return tab;
+    const order = this.workspaceTempPageOrders.get(workspaceId) || [];
+    if (!order.includes(chromeTabId)) {
+      this.workspaceTempPageOrders.set(workspaceId, [...order, chromeTabId]);
+    }
+  }
+
+  private removeTempPageOrder(chromeTabId: number) {
+    for (const [workspaceId, order] of this.workspaceTempPageOrders.entries()) {
+      const nextOrder = order.filter((id) => id !== chromeTabId);
+      this.workspaceTempPageOrders.set(workspaceId, nextOrder);
+    }
   }
 }

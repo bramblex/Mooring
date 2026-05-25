@@ -29,7 +29,7 @@ Harbor Workspace
 - 每个 Workspace 是根目录下的一个书签文件夹。
 - Workspace ID 使用书签文件夹 ID。
 - Workspace 顺序使用根目录下文件夹顺序。
-- Workspace 名称和颜色写在文件夹 title 上。
+- Workspace 名称、颜色和显示/隐藏状态写在文件夹 title 上。
 - Workspace 文件夹下的 Bookmark 表示 Pinned Page。
 - Temp Page 不写入 Workspace 文件夹。
 
@@ -37,18 +37,25 @@ Workspace 文件夹 title 格式：
 
 ```text
 [blue] Work
+[blue:hidden] Work
 ```
 
 解析规则：
 
 ```ts
-const WORKSPACE_TITLE_RE = /^\[(grey|blue|red|yellow|green|pink|purple|cyan|orange)\]\s*(.*)$/;
+const WORKSPACE_TITLE_RE = /^\[(grey|blue|red|yellow|green|pink|purple|cyan|orange)(?::(shown|hidden))?\]\s*(.*)$/;
 ```
 
 如果没有颜色前缀：
 
 - 颜色默认为 `grey`。
 - 完整 title 作为 Workspace 名称。
+- 显示/隐藏状态默认为显示。
+
+如果没有 `:hidden` 状态：
+
+- Workspace 默认为显示。
+- 旧格式 `[blue] Work` 继续有效。
 
 ## 数据结构模板
 
@@ -57,6 +64,7 @@ type Workspace = {
   id: string; // bookmark folder id
   name: string;
   color: chrome.tabGroups.TabGroup["color"];
+  collapsed: boolean;
   order: number;
   pages: Page[];
 };
@@ -83,7 +91,8 @@ type RuntimeWorkspaceBinding = {
 - Chrome Group ID 是运行时投影身份。
 - Chrome Group 标题使用 Workspace 名称。
 - Chrome Group 颜色使用 Workspace 颜色。
-- Chrome Group 折叠状态属于运行时状态。
+- Workspace 显示/隐藏状态来自 Bookmark folder title。
+- Chrome Group 折叠状态只是 Workspace 显示/隐藏状态的运行时投影。
 - Workspace 通过 Page 绑定 Chrome Tab，不直接维护 Chrome Tab 列表。
 
 当 Workspace 没有任何打开的 Page 时：
@@ -148,6 +157,12 @@ Harbor 在扫描主窗口时按名称和颜色尝试匹配 Workspace：
 1. 更新 Workspace 文件夹 title 里的颜色前缀。
 2. 如果当前存在绑定的 Chrome Group，同步更新 Chrome Group color。
 
+### 显示与隐藏
+
+1. 更新 Workspace 文件夹 title 里的显示/隐藏状态。
+2. 如果当前存在绑定的 Chrome Group，同步更新 Chrome Group collapsed。
+3. 如果当前没有绑定 Chrome Group，只更新 Bookmark；下次创建 Chrome Group 时再应用该状态。
+
 ### 删除
 
 1. 二次确认。
@@ -160,16 +175,18 @@ Harbor 在扫描主窗口时按名称和颜色尝试匹配 Workspace：
 
 Workspace 的长期排序来源是 `Harbor Workspace` 根目录下的文件夹顺序。
 
+Harbor managed 的 Workspace 顺序与 Chrome Group 顺序脱钩。
+
 拖动 Workspace 时：
 
 1. 移动 Workspace 书签文件夹。
-2. 如果源 Workspace 和目标 Workspace 都有 Chrome Group，移动源 Chrome Group 到目标 Chrome Group 附近。
-3. 刷新运行时绑定。
+2. 不移动 Chrome Group。
+3. 刷新 Harbor runtime 绑定。
 
 Chrome Group 排序只是运行时投影：
 
-- 可以辅助当前主窗口视觉顺序。
 - 不能作为 Workspace 长期顺序来源。
+- 不需要与 Harbor managed 侧边栏顺序一致。
 - 下次恢复时仍以书签文件夹顺序为准。
 
 ## 与 Page 的关系
@@ -181,7 +198,7 @@ Workspace 只负责容器身份和 Workspace 顺序：
 - Workspace 不直接拥有 Chrome Tab。
 - Pinned Page 可以跨 Workspace 拖动，本质是把对应 Bookmark 移动到目标 Workspace 文件夹。
 - Pinned Page 跨 Workspace 后仍然是 Pinned Page，不会变成 Temp Page。
-- 如果跨 Workspace 的 Pinned Page 当前绑定 Chrome Tab，运行时同步把 Chrome Tab 移入目标 Workspace 对应 Chrome Group。
+- 如果跨 Workspace 的 Pinned Page 当前绑定 Chrome Tab，只确保 Chrome Tab 位于目标 Workspace 对应 Chrome Group，不同步 Chrome Tab index。
 - Workspace 内 Page 的详细状态和排序见 [Page 模型](./page-model.md)。
 
 ## Unmanaged
@@ -191,10 +208,11 @@ Workspace 只负责容器身份和 Workspace 顺序：
 规则：
 
 - Unmanaged 区不写 Bookmark。
-- Unmanaged 区不改变 Workspace 排序。
+- Unmanaged 区不改变 Harbor managed 排序。
 - Harbor 管理区排在 unmanaged 区前面。
 - unmanaged Chrome Tab 可以被移动到 Workspace，成为该 Workspace 的 Temp Page。
 - unmanaged Chrome Group 可以按匹配规则绑定或合并进 Workspace。
+- Unmanaged 区排序跟随 Chrome 当前 Window / Group / Tab 顺序。
 
 ## 不做的事
 

@@ -402,6 +402,24 @@ h2 {
   list-style: none;
 }
 
+.unmanaged-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--color-surface-border);
+  padding-top: 8px;
+}
+
+.unmanaged-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .tab {
   display: grid;
   grid-template-columns: 24px 24px minmax(0, 1fr) auto;

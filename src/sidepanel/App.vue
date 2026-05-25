@@ -14,9 +14,13 @@ import {
 } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "../i18n";
-import type { TabModel } from "../models/tab.model";
+import type { PageModel } from "../models/page.model";
 import type { WindowContext } from "../models/window.model";
-import type { TabGroupColor, WorkspaceState, WorkspaceView } from "../models/workspace.model";
+import type {
+  TabGroupColor,
+  WorkspaceState,
+  WorkspaceView,
+} from "../models/workspace.model";
 
 const GROUP_COLORS: TabGroupColor[] = [
   "grey",
@@ -80,9 +84,10 @@ const GROUP_COLOR_STYLES: Record<TabGroupColor, Record<string, string>> = {
 
 const workspaceState = ref<WorkspaceState>({
   workspaces: [],
-  ungroupedTabs: [],
+  unmanagedPages: [],
+  unmanagedGroups: [],
 });
-const draggedTabId = ref<string | null>(null);
+const draggedPageId = ref<string | null>(null);
 const draggedWorkspaceId = ref<string | null>(null);
 const dragOverKey = ref("");
 const openColorPickerGroupId = ref<string | null>(null);
@@ -97,16 +102,16 @@ const workspaces = computed(() =>
   [...workspaceState.value.workspaces].sort((a, b) => a.order - b.order),
 );
 
-function tabTitle(tab: TabModel) {
-  return tab.title || tab.url || t("untitledTab");
+function pageTitle(page: PageModel) {
+  return page.title || page.url || t("untitledPage");
 }
 
-function tabSubtitle(tab: TabModel) {
-  return tab.dirty ? tab.currentTitle || tab.url || "" : "";
+function pageSubtitle(page: PageModel) {
+  return page.dirty ? page.currentTitle || page.url || "" : "";
 }
 
-function tabFavicon(tab: TabModel) {
-  return tab.favIconUrl || "";
+function pageFavicon(page: PageModel) {
+  return page.favIconUrl || "";
 }
 
 function groupColorStyle(color: TabGroupColor) {
@@ -178,16 +183,16 @@ async function createWorkspace() {
   await refreshTabs();
 }
 
-async function openWorkspaceTab(workspace: WorkspaceView | null, tab: TabModel) {
+async function openWorkspacePage(workspace: WorkspaceView | null, page: PageModel) {
   if (!workspace || currentWindowId.value === undefined) {
-    if (tab.tabId) await chrome.tabs.update(tab.tabId, { active: true });
+    if (page.chromeTabId) await chrome.tabs.update(page.chromeTabId, { active: true });
     return;
   }
 
   await sendMessage({
-    type: "OPEN_WORKSPACE_TAB",
+    type: "OPEN_WORKSPACE_PAGE",
     workspaceId: workspace.id,
-    tabId: tab.id,
+    pageId: page.id,
     windowId: currentWindowId.value,
   });
   await refreshTabs();
@@ -232,59 +237,59 @@ async function deleteWorkspace(workspace: WorkspaceView) {
   await refreshTabs();
 }
 
-async function togglePinnedTab(workspace: WorkspaceView | null, tab: TabModel) {
-  if (tab.pinned) {
-    if (!window.confirm(t("unpinTabConfirm"))) return;
+async function togglePinnedPage(workspace: WorkspaceView | null, page: PageModel) {
+  if (page.pinned) {
+    if (!window.confirm(t("unpinPageConfirm"))) return;
 
     await sendMessage({
-      type: "UNPIN_TAB",
-      tabId: tab.tabId,
-      bookmarkId: tab.bookmarkId,
+      type: "UNPIN_PAGE",
+      chromeTabId: page.chromeTabId,
+      bookmarkId: page.bookmarkId,
     });
     await refreshTabs();
     return;
   }
 
-  if (!workspace || !tab.tabId) return;
+  if (!workspace || !page.chromeTabId) return;
 
   await sendMessage({
-    type: "PIN_TAB",
+    type: "PIN_PAGE",
     workspaceId: workspace.id,
-    tabId: tab.tabId,
+    chromeTabId: page.chromeTabId,
   });
   await refreshTabs();
 }
 
-async function updatePinnedTabTitle(tab: TabModel, event: Event) {
-  if (!tab.bookmarkId) return;
+async function updatePinnedPageTitle(page: PageModel, event: Event) {
+  if (!page.bookmarkId) return;
 
   const target = event.target as HTMLInputElement;
   await sendMessage({
-    type: "UPDATE_PINNED_TAB_TITLE",
-    bookmarkId: tab.bookmarkId,
-    title: target.value.trim() || t("untitledTab"),
+    type: "UPDATE_PINNED_PAGE_TITLE",
+    bookmarkId: page.bookmarkId,
+    title: target.value.trim() || t("untitledPage"),
   });
   editingBookmarkId.value = null;
   await refreshTabs();
 }
 
-function editPinnedTabTitle(tab: TabModel) {
-  if (!tab.bookmarkId) return;
+function editPinnedPageTitle(page: PageModel) {
+  if (!page.bookmarkId) return;
 
-  editingBookmarkId.value = tab.bookmarkId;
+  editingBookmarkId.value = page.bookmarkId;
 }
 
-async function closeWorkspaceTab(tab: TabModel) {
-  if (!tab.tabId) return;
+async function closeWorkspacePage(page: PageModel) {
+  if (!page.chromeTabId) return;
 
   await sendMessage({
-    type: "CLOSE_WORKSPACE_TAB",
-    tabId: tab.tabId,
+    type: "CLOSE_WORKSPACE_PAGE",
+    chromeTabId: page.chromeTabId,
   });
   await refreshTabs();
 }
 
-function onTabDragStart(tab: TabModel, event: DragEvent) {
+function onPageDragStart(page: PageModel, event: DragEvent) {
   if (isEditableElement(event.target)) {
     event.preventDefault();
     return;
@@ -292,17 +297,17 @@ function onTabDragStart(tab: TabModel, event: DragEvent) {
 
   if (!event.dataTransfer) return;
 
-  draggedTabId.value = tab.id;
+  draggedPageId.value = page.id;
   draggedWorkspaceId.value = null;
   event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", tab.id);
+  event.dataTransfer.setData("text/plain", page.id);
 }
 
 function onWorkspaceDragStart(workspace: WorkspaceView, event: DragEvent) {
   if (!event.dataTransfer) return;
 
   draggedWorkspaceId.value = workspace.id;
-  draggedTabId.value = null;
+  draggedPageId.value = null;
   event.dataTransfer.effectAllowed = "move";
   event.dataTransfer.setData("text/plain", `workspace:${workspace.id}`);
 }
@@ -313,7 +318,7 @@ function onDragOver(key: string, event: DragEvent) {
   dragOverKey.value = key;
 }
 
-function onTabDragOver(key: string, event: DragEvent) {
+function onPageDragOver(key: string, event: DragEvent) {
   if (draggedWorkspaceId.value !== null) return;
 
   onDragOver(key, event);
@@ -329,11 +334,11 @@ async function onDrop(workspaceId: string | null, index: number, event: DragEven
   event.preventDefault();
   event.stopPropagation();
 
-  if (draggedTabId.value === null || currentWindowId.value === undefined) return;
+  if (draggedPageId.value === null || currentWindowId.value === undefined) return;
 
   await sendMessage({
-    type: "MOVE_WORKSPACE_TAB",
-    tabId: draggedTabId.value,
+    type: "MOVE_WORKSPACE_PAGE",
+    pageId: draggedPageId.value,
     workspaceId,
     index,
     windowId: currentWindowId.value,
@@ -350,7 +355,7 @@ function getTabDropIndex(targetIndex: number, event: DragEvent) {
   return shouldInsertAfter ? targetIndex + 1 : targetIndex;
 }
 
-async function onTabDrop(workspaceId: string | null, targetIndex: number, event: DragEvent) {
+async function onPageDrop(workspaceId: string | null, targetIndex: number, event: DragEvent) {
   if (draggedWorkspaceId.value !== null) return;
 
   await onDrop(workspaceId, getTabDropIndex(targetIndex, event), event);
@@ -372,7 +377,7 @@ async function onWorkspaceDrop(targetWorkspace: WorkspaceView, event: DragEvent)
 }
 
 function onDragEnd() {
-  draggedTabId.value = null;
+  draggedPageId.value = null;
   draggedWorkspaceId.value = null;
   dragOverKey.value = "";
 }
@@ -480,68 +485,7 @@ onMounted(async () => {
     </header>
 
     <section class="groups" :aria-label="t('openTabs')">
-      <section
-        class="group-section ungrouped"
-        :class="{ 'drag-over': dragOverKey === 'workspace-ungrouped' }"
-        @dragover="onDragOver('workspace-ungrouped', $event)"
-        @dragleave="onDragLeave('workspace-ungrouped')"
-        @drop="onDrop(null, -1, $event)"
-      >
-        <div class="group-header">
-          <h2>{{ t("ungrouped") }}</h2>
-        </div>
-        <ol class="tabs">
-          <li
-            v-for="(tab, tabIndex) in workspaceState.ungroupedTabs"
-            :key="tab.id"
-            class="tab"
-            :class="{
-              active: tab.active,
-              dragging: draggedTabId === tab.id,
-              'drag-over': dragOverKey === `tab-${tab.id}`,
-            }"
-            @dragover="onTabDragOver(`tab-${tab.id}`, $event)"
-            @dragleave="onDragLeave(`tab-${tab.id}`)"
-            @drop="onTabDrop(null, tabIndex, $event)"
-            @dragend="onDragEnd"
-          >
-            <span
-              class="drag-handle"
-              draggable="true"
-              :title="t('dragGroup')"
-              :aria-label="t('dragGroup')"
-              @dragstart="onTabDragStart(tab, $event)"
-              @dragend="onDragEnd"
-            >
-              <GripVertical :size="16" />
-            </span>
-            <span class="tab-favicon" aria-hidden="true">
-              <img v-if="tabFavicon(tab)" :src="tabFavicon(tab)" alt="">
-              <File v-else :size="16" />
-            </span>
-            <button
-              class="tab-title-button"
-              type="button"
-              :title="tabTitle(tab)"
-              @click="openWorkspaceTab(null, tab)"
-            >
-              <span class="tab-title">{{ tabTitle(tab) }}</span>
-            </button>
-            <div class="tab-actions">
-              <button
-                class="icon-button subtle"
-                type="button"
-                :title="t('closeTab')"
-                :aria-label="t('closeTab')"
-                @click.stop="closeWorkspaceTab(tab)"
-              >
-                <X :size="16" aria-hidden="true" />
-              </button>
-            </div>
-          </li>
-        </ol>
-      </section>
-
+      <!-- docs/产品逻辑文档.md: Harbor 管理的 Workspace 区域排在 Unmanaged 区域前面。 -->
       <section
         v-for="workspace in workspaces"
         :key="workspace.id"
@@ -629,26 +573,26 @@ onMounted(async () => {
 
         <ol v-if="!workspace.collapsed" class="tabs">
           <li
-            v-for="(tab, tabIndex) in workspace.tabs"
-            :key="tab.id"
+            v-for="(page, pageIndex) in workspace.pages"
+            :key="page.id"
             class="tab"
             :class="{
-              active: tab.active,
-              dragging: draggedTabId === tab.id,
-              'drag-over': dragOverKey === `tab-${tab.id}`,
-              'closed-tab': !tab.open,
+              active: page.active,
+              dragging: draggedPageId === page.id,
+              'drag-over': dragOverKey === `page-${page.id}`,
+              'closed-tab': !page.open,
             }"
-            @dragover="onTabDragOver(`tab-${tab.id}`, $event)"
-            @dragleave="onDragLeave(`tab-${tab.id}`)"
-            @drop="onTabDrop(workspace.id, tabIndex, $event)"
+            @dragover="onPageDragOver(`page-${page.id}`, $event)"
+            @dragleave="onDragLeave(`page-${page.id}`)"
+            @drop="onPageDrop(workspace.id, pageIndex, $event)"
             @dragend="onDragEnd"
           >
             <span
               class="drag-handle"
               draggable="true"
-              :title="t('dragGroup')"
-              :aria-label="t('dragGroup')"
-              @dragstart="onTabDragStart(tab, $event)"
+              :title="t('dragPage')"
+              :aria-label="t('dragPage')"
+              @dragstart="onPageDragStart(page, $event)"
               @dragend="onDragEnd"
             >
               <GripVertical :size="16" />
@@ -656,49 +600,49 @@ onMounted(async () => {
             <button
               class="tab-favicon"
               type="button"
-              :title="tabTitle(tab)"
-              :aria-label="tabTitle(tab)"
-              @click="openWorkspaceTab(workspace, tab)"
+              :title="pageTitle(page)"
+              :aria-label="pageTitle(page)"
+              @click="openWorkspacePage(workspace, page)"
             >
-              <img v-if="tabFavicon(tab)" :src="tabFavicon(tab)" alt="">
+              <img v-if="pageFavicon(page)" :src="pageFavicon(page)" alt="">
               <File v-else :size="16" />
             </button>
             <input
-              v-if="tab.pinned && editingBookmarkId === tab.bookmarkId"
+              v-if="page.pinned && editingBookmarkId === page.bookmarkId"
               class="tab-title-input"
-              :value="tabTitle(tab)"
-              :title="tabTitle(tab)"
+              :value="pageTitle(page)"
+              :title="pageTitle(page)"
               :aria-label="t('bookmarkTitle')"
               draggable="false"
-              @blur="updatePinnedTabTitle(tab, $event)"
+              @blur="updatePinnedPageTitle(page, $event)"
               @dragstart="stopInputDrag"
               @keydown.enter="($event.target as HTMLInputElement).blur()"
             >
             <button
-              v-else-if="!tab.pinned"
+              v-else-if="!page.pinned"
               class="tab-title-button"
               type="button"
-              :title="tabTitle(tab)"
-              @click="openWorkspaceTab(workspace, tab)"
+              :title="pageTitle(page)"
+              @click="openWorkspacePage(workspace, page)"
             >
               <span class="tab-title">
-                {{ tabTitle(tab) }}
-                <span v-if="tabSubtitle(tab)" class="tab-subtitle">
-                  · {{ tabSubtitle(tab) }}
+                {{ pageTitle(page) }}
+                <span v-if="pageSubtitle(page)" class="tab-subtitle">
+                  · {{ pageSubtitle(page) }}
                 </span>
               </span>
             </button>
-            <div v-else class="tab-title-static" :title="tabTitle(tab)">
+            <div v-else class="tab-title-static" :title="pageTitle(page)">
               <button
                 class="tab-title-button"
                 type="button"
-                :title="tabTitle(tab)"
-                @click="openWorkspaceTab(workspace, tab)"
+                :title="pageTitle(page)"
+                @click="openWorkspacePage(workspace, page)"
               >
                 <span class="tab-title">
-                  {{ tabTitle(tab) }}
-                  <span v-if="tabSubtitle(tab)" class="tab-subtitle">
-                    · {{ tabSubtitle(tab) }}
+                  {{ pageTitle(page) }}
+                  <span v-if="pageSubtitle(page)" class="tab-subtitle">
+                    · {{ pageSubtitle(page) }}
                   </span>
                 </span>
               </button>
@@ -707,42 +651,164 @@ onMounted(async () => {
                 type="button"
                 :title="t('bookmarkTitle')"
                 :aria-label="t('bookmarkTitle')"
-                @click.stop="editPinnedTabTitle(tab)"
+                @click.stop="editPinnedPageTitle(page)"
               >
                 <Pencil :size="13" aria-hidden="true" />
               </button>
             </div>
             <div class="tab-actions">
               <Circle
-                v-if="tab.dirty"
+                v-if="page.dirty"
                 class="dirty-dot"
                 :size="9"
-                :title="t('pinnedTabDirty')"
-                :aria-label="t('pinnedTabDirty')"
+                :title="t('pinnedPageDirty')"
+                :aria-label="t('pinnedPageDirty')"
               />
               <button
                 class="icon-button subtle"
                 type="button"
-                :class="{ active: tab.pinned }"
-                :title="tab.pinned ? t('unpinTab') : t('pinTab')"
-                :aria-label="tab.pinned ? t('unpinTab') : t('pinTab')"
-                @click.stop="togglePinnedTab(workspace, tab)"
+                :class="{ active: page.pinned }"
+                :title="page.pinned ? t('unpinPage') : t('pinPage')"
+                :aria-label="page.pinned ? t('unpinPage') : t('pinPage')"
+                @click.stop="togglePinnedPage(workspace, page)"
               >
                 <Star :size="16" aria-hidden="true" />
               </button>
               <button
-                v-if="tab.open"
+                v-if="page.open"
                 class="icon-button subtle"
                 type="button"
-                :title="t('closeTab')"
-                :aria-label="t('closeTab')"
-                @click.stop="closeWorkspaceTab(tab)"
+                :title="t('closePage')"
+                :aria-label="t('closePage')"
+                @click.stop="closeWorkspacePage(page)"
               >
                 <X :size="16" aria-hidden="true" />
               </button>
             </div>
           </li>
         </ol>
+      </section>
+
+      <!-- docs/产品逻辑文档.md: Unmanaged 区域显示未被 Harbor 管理的 Chrome Tab 或 Chrome Group。 -->
+      <section
+        class="group-section ungrouped"
+        :class="{ 'drag-over': dragOverKey === 'workspace-unmanaged' }"
+        @dragover="onDragOver('workspace-unmanaged', $event)"
+        @dragleave="onDragLeave('workspace-unmanaged')"
+        @drop="onDrop(null, -1, $event)"
+      >
+        <div class="group-header">
+          <h2>{{ t("unmanaged") }}</h2>
+        </div>
+
+        <ol class="tabs">
+          <li
+            v-for="(page, pageIndex) in workspaceState.unmanagedPages"
+            :key="page.id"
+            class="tab"
+            :class="{
+              active: page.active,
+              dragging: draggedPageId === page.id,
+              'drag-over': dragOverKey === `page-${page.id}`,
+            }"
+            @dragover="onPageDragOver(`page-${page.id}`, $event)"
+            @dragleave="onDragLeave(`page-${page.id}`)"
+            @drop="onPageDrop(null, pageIndex, $event)"
+            @dragend="onDragEnd"
+          >
+            <span
+              class="drag-handle"
+              draggable="true"
+              :title="t('dragPage')"
+              :aria-label="t('dragPage')"
+              @dragstart="onPageDragStart(page, $event)"
+              @dragend="onDragEnd"
+            >
+              <GripVertical :size="16" />
+            </span>
+            <span class="tab-favicon" aria-hidden="true">
+              <img v-if="pageFavicon(page)" :src="pageFavicon(page)" alt="">
+              <File v-else :size="16" />
+            </span>
+            <button
+              class="tab-title-button"
+              type="button"
+              :title="pageTitle(page)"
+              @click="openWorkspacePage(null, page)"
+            >
+              <span class="tab-title">{{ pageTitle(page) }}</span>
+            </button>
+            <div class="tab-actions">
+              <button
+                class="icon-button subtle"
+                type="button"
+                :title="t('closePage')"
+                :aria-label="t('closePage')"
+                @click.stop="closeWorkspacePage(page)"
+              >
+                <X :size="16" aria-hidden="true" />
+              </button>
+            </div>
+          </li>
+        </ol>
+
+        <section
+          v-for="group in workspaceState.unmanagedGroups"
+          :key="group.id"
+          class="unmanaged-group"
+          :style="groupColorStyle(group.color)"
+        >
+          <div class="unmanaged-group-title">
+            <span class="color-dot" aria-hidden="true"></span>
+            <span>{{ group.title }}</span>
+          </div>
+          <ol class="tabs">
+            <li
+              v-for="page in group.pages"
+              :key="page.id"
+              class="tab"
+              :class="{
+                active: page.active,
+                dragging: draggedPageId === page.id,
+              }"
+              @dragend="onDragEnd"
+            >
+              <span
+                class="drag-handle"
+                draggable="true"
+                :title="t('dragPage')"
+                :aria-label="t('dragPage')"
+                @dragstart="onPageDragStart(page, $event)"
+                @dragend="onDragEnd"
+              >
+                <GripVertical :size="16" />
+              </span>
+              <span class="tab-favicon" aria-hidden="true">
+                <img v-if="pageFavicon(page)" :src="pageFavicon(page)" alt="">
+                <File v-else :size="16" />
+              </span>
+              <button
+                class="tab-title-button"
+                type="button"
+                :title="pageTitle(page)"
+                @click="openWorkspacePage(null, page)"
+              >
+                <span class="tab-title">{{ pageTitle(page) }}</span>
+              </button>
+              <div class="tab-actions">
+                <button
+                  class="icon-button subtle"
+                  type="button"
+                  :title="t('closePage')"
+                  :aria-label="t('closePage')"
+                  @click.stop="closeWorkspacePage(page)"
+                >
+                  <X :size="16" aria-hidden="true" />
+                </button>
+              </div>
+            </li>
+          </ol>
+        </section>
       </section>
     </section>
   </main>

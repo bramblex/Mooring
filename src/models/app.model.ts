@@ -44,33 +44,33 @@ type AppMessage =
         workspaceId: string;
     }
     | {
-        type: "OPEN_WORKSPACE_TAB";
+        type: "OPEN_WORKSPACE_PAGE";
         workspaceId: string;
-        tabId: string;
+        pageId: string;
         windowId?: number;
     }
     | {
-        type: "CLOSE_WORKSPACE_TAB";
-        tabId: number;
+        type: "CLOSE_WORKSPACE_PAGE";
+        chromeTabId: number;
     }
     | {
-        type: "PIN_TAB";
+        type: "PIN_PAGE";
         workspaceId: string;
-        tabId: number;
+        chromeTabId: number;
     }
     | {
-        type: "UNPIN_TAB";
-        tabId?: number;
+        type: "UNPIN_PAGE";
+        chromeTabId?: number;
         bookmarkId?: string;
     }
     | {
-        type: "UPDATE_PINNED_TAB_TITLE";
+        type: "UPDATE_PINNED_PAGE_TITLE";
         bookmarkId: string;
         title: string;
     }
     | {
-        type: "MOVE_WORKSPACE_TAB";
-        tabId: string;
+        type: "MOVE_WORKSPACE_PAGE";
+        pageId: string;
         workspaceId: string | null;
         index: number;
         windowId?: number;
@@ -108,6 +108,8 @@ export class AppModel {
         await this.ensureMainWindowIsValid();
         if (this.mainWindow) return;
 
+        // docs/window-model.md: 首次安装或初始化时，如果没有主窗口，
+        // 当前窗口成为主窗口；主窗口 ID 只保存在运行时内存。
         const currentWindow = await chrome.windows.getCurrent();
         this.createWindow(currentWindow.id, "primary");
     }
@@ -197,6 +199,10 @@ export class AppModel {
             await this.initialize();
         });
 
+        chrome.runtime.onStartup.addListener(() => {
+            this.workspace.markRuntimeBindingsRebuildNeeded();
+        });
+
         chrome.action.onClicked.addListener(async (tab) => {
             if (!tab.windowId) return;
             await chrome.sidePanel.open({ windowId: tab.windowId });
@@ -230,7 +236,7 @@ export class AppModel {
                 await this.sendAllTabsToMainWindow(message.windowId);
                 return { ok: true };
             case "GET_WORKSPACE_STATE":
-                if (!message.windowId) return { workspaces: [], ungroupedTabs: [] };
+                if (!message.windowId) return { workspaces: [], unmanagedPages: [], unmanagedGroups: [] };
                 return this.workspace.getState(message.windowId);
             case "CREATE_WORKSPACE":
                 if (!message.windowId) return { ok: false };
@@ -248,26 +254,26 @@ export class AppModel {
             case "DELETE_WORKSPACE":
                 await this.workspace.deleteWorkspace(message.workspaceId);
                 return { ok: true };
-            case "OPEN_WORKSPACE_TAB":
+            case "OPEN_WORKSPACE_PAGE":
                 if (!message.windowId) return { ok: false };
-                await this.workspace.openWorkspaceTab(message.workspaceId, message.tabId, message.windowId);
+                await this.workspace.openWorkspacePage(message.workspaceId, message.pageId, message.windowId);
                 return { ok: true };
-            case "CLOSE_WORKSPACE_TAB":
-                await this.workspace.closeWorkspaceTab(message.tabId);
+            case "CLOSE_WORKSPACE_PAGE":
+                await this.workspace.closeWorkspacePage(message.chromeTabId);
                 return { ok: true };
-            case "PIN_TAB":
-                await this.workspace.pinTab(message.workspaceId, message.tabId);
+            case "PIN_PAGE":
+                await this.workspace.pinPage(message.workspaceId, message.chromeTabId);
                 return { ok: true };
-            case "UNPIN_TAB":
-                await this.workspace.unpinTab(message.tabId, message.bookmarkId);
+            case "UNPIN_PAGE":
+                await this.workspace.unpinPage(message.chromeTabId, message.bookmarkId);
                 return { ok: true };
-            case "UPDATE_PINNED_TAB_TITLE":
-                await this.workspace.updatePinnedTabTitle(message.bookmarkId, message.title);
+            case "UPDATE_PINNED_PAGE_TITLE":
+                await this.workspace.updatePinnedPageTitle(message.bookmarkId, message.title);
                 return { ok: true };
-            case "MOVE_WORKSPACE_TAB":
+            case "MOVE_WORKSPACE_PAGE":
                 if (!message.windowId) return { ok: false };
-                await this.workspace.moveTabToWorkspace(
-                    message.tabId,
+                await this.workspace.movePageToWorkspace(
+                    message.pageId,
                     message.workspaceId,
                     message.index,
                     message.windowId,
@@ -316,6 +322,8 @@ export class AppModel {
         this.windows = this.windows.filter((window) => window.id !== id);
 
         if (removedWindow?.role === "primary") {
+            // docs/window-model.md: 主窗口关闭后清空 Workspace / Page 与
+            // Chrome Group / Chrome Tab 的 runtime binding，Bookmark 保留。
             this.workspace.clearRuntimeBindings();
         }
     }
