@@ -514,18 +514,29 @@ export class WorkspaceModel {
     void this.persistRuntimeBindings();
   }
 
-  async moveWorkspace(sourceWorkspaceId: string, targetWorkspaceId: string) {
+  async moveWorkspace(sourceWorkspaceId: string, index: number) {
     await this.ensureRuntimeBindingsLoaded();
 
     const root = await this.ensureRootFolder();
     const folders = await this.listWorkspaceFolders(root.id);
-    const targetFolder = folders.find((folder) => folder.id === targetWorkspaceId);
-    if (!targetFolder) return;
+    const sourceFolder = folders.find((folder) => folder.id === sourceWorkspaceId);
+    if (!sourceFolder) return;
 
-    await chrome.bookmarks.move(sourceWorkspaceId, {
+    const finalOrder = folders.filter((folder) => folder.id !== sourceWorkspaceId);
+    const nextIndex = Math.max(0, Math.min(index, finalOrder.length));
+
+    finalOrder.splice(nextIndex, 0, sourceFolder);
+
+    const finalIndex = finalOrder.findIndex((folder) => folder.id === sourceWorkspaceId);
+    const destination: { parentId: string; index?: number } = {
       parentId: root.id,
-      index: targetFolder.index,
-    });
+    };
+
+    if (finalIndex < finalOrder.length - 1) {
+      destination.index = finalIndex;
+    }
+
+    await chrome.bookmarks.move(sourceWorkspaceId, destination);
   }
 
   private async ensureRootFolder() {

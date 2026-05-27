@@ -212,7 +212,7 @@ input:focus-visible {
 .groups {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
 }
 
 .temporary-actions {
@@ -247,17 +247,32 @@ input:focus-visible {
   box-shadow: 0 1px 4px rgb(15 23 42 / 10%);
 }
 
-.group-section.drag-over {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 2px;
-}
-
 .group-header {
   display: flex;
   justify-content: space-between;
   gap: 6px;
   align-items: center;
   position: relative;
+  cursor: grab;
+}
+
+.group-section.dragging .group-header {
+  cursor: grabbing;
+}
+
+.workspace-drop-gap {
+  height: 6px;
+  border-radius: 999px;
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease,
+    height 120ms ease;
+}
+
+.workspace-drop-gap.active {
+  height: 8px;
+  background: var(--color-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus) 22%, transparent);
 }
 
 .ungrouped .group-header {

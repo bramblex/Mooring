@@ -369,6 +369,11 @@ function onPageDragStart(page: PageModel, event: DragEvent) {
 }
 
 function onWorkspaceDragStart(workspace: WorkspaceView, event: DragEvent) {
+  if (isEditingWorkspace(workspace) || isEditableElement(event.target)) {
+    event.preventDefault();
+    return;
+  }
+
   if (!event.dataTransfer) return;
 
   draggedWorkspaceId.value = workspace.id;
@@ -385,6 +390,67 @@ function onDragOver(key: string, event: DragEvent) {
 
 function pageGapKey(workspaceId: string | null, index: number) {
   return `page-gap-${workspaceId || "unmanaged"}-${index}`;
+}
+
+function workspaceGapKey(index: number) {
+  return `workspace-gap-${index}`;
+}
+
+function isEditingWorkspace(workspace: WorkspaceView) {
+  return editingWorkspaceId.value === workspace.id;
+}
+
+function findWorkspaceIndex(workspaceId: string | null) {
+  if (!workspaceId) return -1;
+
+  return workspaces.value.findIndex((workspace) => workspace.id === workspaceId);
+}
+
+function isNoopWorkspaceDrop(index: number) {
+  const currentIndex = findWorkspaceIndex(draggedWorkspaceId.value);
+  return currentIndex >= 0 && (index === currentIndex || index === currentIndex + 1);
+}
+
+function canDropWorkspaceAt(index: number) {
+  return draggedWorkspaceId.value !== null && draggedPageId.value === null && !isNoopWorkspaceDrop(index);
+}
+
+function onWorkspaceGapDragOver(index: number, event: DragEvent) {
+  if (!canDropWorkspaceAt(index)) {
+    dragOverKey.value = "";
+    return;
+  }
+
+  onDragOver(workspaceGapKey(index), event);
+}
+
+function workspaceDropIndexFromEvent(targetIndex: number, event: DragEvent) {
+  const target = event.currentTarget as HTMLElement;
+  const rect = target.getBoundingClientRect();
+  const shouldInsertAfter = event.clientY > rect.top + rect.height / 2;
+
+  return shouldInsertAfter ? targetIndex + 1 : targetIndex;
+}
+
+function onWorkspaceSectionDragOver(targetIndex: number, event: DragEvent) {
+  if (draggedWorkspaceId.value === null || draggedPageId.value !== null) return;
+
+  const index = workspaceDropIndexFromEvent(targetIndex, event);
+  if (!canDropWorkspaceAt(index)) {
+    dragOverKey.value = "";
+    return;
+  }
+
+  onDragOver(workspaceGapKey(index), event);
+}
+
+async function onWorkspaceSectionDrop(targetIndex: number, event: DragEvent) {
+  if (draggedWorkspaceId.value === null || draggedPageId.value !== null) return;
+
+  const index = workspaceDropIndexFromEvent(targetIndex, event);
+  if (!canDropWorkspaceAt(index)) return;
+
+  await onWorkspaceDrop(index, event);
 }
 
 function canDropPageInto(workspaceId: string | null) {
@@ -476,35 +542,19 @@ async function onPageGapDrop(workspaceId: string | null, index: number, event: D
   await onDrop(workspaceId, index, event);
 }
 
-async function onWorkspaceDrop(targetWorkspace: WorkspaceView, event: DragEvent) {
+async function onWorkspaceDrop(index: number, event: DragEvent) {
   event.preventDefault();
   event.stopPropagation();
 
-  if (draggedWorkspaceId.value === null || draggedWorkspaceId.value === targetWorkspace.id) return;
+  if (!canDropWorkspaceAt(index) || draggedWorkspaceId.value === null) return;
 
   await sendMessage({
     type: "MOVE_WORKSPACE",
     sourceWorkspaceId: draggedWorkspaceId.value,
-    targetWorkspaceId: targetWorkspace.id,
+    index,
   });
   onDragEnd();
   await refreshTabs();
-}
-
-function onWorkspaceSectionDragOver(workspace: WorkspaceView, event: DragEvent) {
-  if (draggedWorkspaceId.value === null) return;
-
-  onDragOver(`workspace-${workspace.id}`, event);
-}
-
-async function onWorkspaceSectionDrop(workspace: WorkspaceView, event: DragEvent) {
-  if (draggedWorkspaceId.value === null) {
-    event.preventDefault();
-    event.stopPropagation();
-    return;
-  }
-
-  await onWorkspaceDrop(workspace, event);
 }
 
 function onDragEnd() {
@@ -642,20 +692,27 @@ onMounted(async () => {
 
     <section class="groups" :aria-label="t('openTabs')">
       <!-- docs/product-logic.md: Mooring 管理的 Workspace 区域排在 Unmanaged 区域前面。 -->
-      <section
-        v-for="workspace in workspaces"
-        :key="workspace.id"
-        class="group-section"
-        :class="{
-          dragging: draggedWorkspaceId === workspace.id,
-          'drag-over': dragOverKey === `workspace-${workspace.id}`,
-        }"
-        :style="groupColorStyle(workspace.color)"
-        @dragover="onWorkspaceSectionDragOver(workspace, $event)"
-        @dragleave="onDragLeave(`workspace-${workspace.id}`)"
-        @drop="onWorkspaceSectionDrop(workspace, $event)"
-      >
-        <div class="group-header">
+      <template v-for="(workspace, workspaceIndex) in workspaces" :key="workspace.id">
+        <div
+          class="workspace-drop-gap"
+          :class="{ active: dragOverKey === workspaceGapKey(workspaceIndex) }"
+          @dragover="onWorkspaceGapDragOver(workspaceIndex, $event)"
+          @dragleave="onDragLeave(workspaceGapKey(workspaceIndex))"
+          @drop="onWorkspaceDrop(workspaceIndex, $event)"
+        ></div>
+        <section
+          class="group-section"
+          :class="{ dragging: draggedWorkspaceId === workspace.id }"
+          :style="groupColorStyle(workspace.color)"
+          @dragover="onWorkspaceSectionDragOver(workspaceIndex, $event)"
+          @drop="onWorkspaceSectionDrop(workspaceIndex, $event)"
+        >
+        <div
+          class="group-header"
+          :draggable="!isEditingWorkspace(workspace)"
+          @dragstart="onWorkspaceDragStart(workspace, $event)"
+          @dragend="onDragEnd"
+        >
           <div class="group-main">
             <div class="group-color-picker" :style="groupColorStyle(workspace.color)">
               <button
@@ -879,7 +936,15 @@ onMounted(async () => {
             @drop="onPageGapDrop(workspace.id, workspace.pages.length, $event)"
           ></li>
         </ol>
-      </section>
+        </section>
+      </template>
+      <div
+        class="workspace-drop-gap"
+        :class="{ active: dragOverKey === workspaceGapKey(workspaces.length) }"
+        @dragover="onWorkspaceGapDragOver(workspaces.length, $event)"
+        @dragleave="onDragLeave(workspaceGapKey(workspaces.length))"
+        @drop="onWorkspaceDrop(workspaces.length, $event)"
+      ></div>
 
       <!-- docs/product-logic.md: Unmanaged 区域显示未被 Mooring 管理的 Chrome Tab 或 Chrome Group。 -->
       <section
