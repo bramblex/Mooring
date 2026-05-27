@@ -926,6 +926,28 @@ h2 {
 }
 
 @media (prefers-color-scheme: dark) {
+  .workspace-nav-item {
+    border-color: color-mix(in srgb, var(--group-color) 54%, var(--color-surface-border));
+    background: var(--group-bg-dark, var(--color-group-bg));
+  }
+
+  .workspace-nav-item:hover,
+  .workspace-nav-item:focus-visible,
+  .workspace-nav-item.active {
+    border-color: var(--group-color, var(--color-focus));
+    background: color-mix(in srgb, var(--group-bg-dark, var(--color-group-bg)) 76%, var(--color-control-hover));
+  }
+
+  .temp-nav-item {
+    --group-bg-dark: color-mix(in srgb, var(--color-surface) 86%, #fff 4%);
+    border-color: color-mix(in srgb, var(--color-muted) 38%, var(--color-surface-border));
+  }
+
+  .workspace-nav-count {
+    color: var(--color-text);
+    background: color-mix(in srgb, var(--group-color) 24%, transparent);
+  }
+
   .group-section {
     border-color: var(--color-group-border);
     border-left-color: var(--group-color, var(--color-group-border));
