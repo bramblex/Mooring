@@ -46,6 +46,7 @@ const WORKSPACE_TITLE_RE = /^\[(grey|blue|red|yellow|green|pink|purple|cyan|oran
 
 const BOOKMARK_BAR_ID = "1";
 const RUNTIME_BINDINGS_STORAGE_KEY = "mooringRuntimeBindings";
+const WORKSPACE_NAME_RE = /^Workspace (\d+)$/;
 
 type RuntimeBindingsStorage = {
   workspaceGroupIds?: Array<[string, number]>;
@@ -96,6 +97,20 @@ function bookmarkKey(bookmark: chrome.bookmarks.BookmarkTreeNode) {
 function canBookmarkTab(tab: chrome.tabs.Tab) {
   const url = chromeTabUrl(tab);
   return Boolean(url && !url.startsWith("chrome://") && !url.startsWith("chrome-extension://"));
+}
+
+function nextWorkspaceName(folders: WorkspaceFolder[]) {
+  const usedNumbers = new Set(
+    folders
+      .map((folder) => folder.name.match(WORKSPACE_NAME_RE)?.[1])
+      .filter((value): value is string => Boolean(value))
+      .map((value) => Number(value)),
+  );
+
+  let index = 1;
+  while (usedNumbers.has(index)) index += 1;
+
+  return `Workspace ${index}`;
 }
 
 export class WorkspaceModel {
@@ -212,9 +227,10 @@ export class WorkspaceModel {
     await this.ensureRuntimeBindingsLoaded();
 
     const root = await this.ensureRootFolder();
+    const folders = await this.listWorkspaceFolders(root.id);
     const folder = await chrome.bookmarks.create({
       parentId: root.id,
-      title: formatWorkspaceTitle(DEFAULT_WORKSPACE_NAME, DEFAULT_WORKSPACE_COLOR, false),
+      title: formatWorkspaceTitle(nextWorkspaceName(folders), DEFAULT_WORKSPACE_COLOR, false),
     });
 
     // docs/workspace-model.md: 创建空 Workspace 只创建 Bookmark 文件夹，
