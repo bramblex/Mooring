@@ -25,6 +25,10 @@ Mooring does not sell, transfer, or share user data with third parties.
 
 Mooring does not execute remote code. All extension code is packaged with the extension and runs locally in Chrome.
 
+## Open Source
+
+The source code for Mooring is publicly available at https://github.com/qjnight/Mooring so users and reviewers can inspect how the extension handles data.
+
 ## Data Storage
 
 Workspace structure and pinned workspace pages are stored using Chrome bookmarks. Lightweight local extension state may be stored in Chrome local storage. Runtime information such as the main window and open tab bindings is kept locally and is not transmitted externally.
