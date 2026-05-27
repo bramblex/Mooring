@@ -10,7 +10,7 @@ import {
   Trash2,
   X,
 } from "@lucide/vue";
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "../i18n";
 import type { PageModel } from "../models/page.model";
 import type { WindowContext } from "../models/window.model";
@@ -111,6 +111,8 @@ const confirmDialog = ref<ConfirmDialog | null>(null);
 const windowContext = ref<WindowContext | null>(null);
 const currentWindowId = ref<number | undefined>();
 const { t } = useI18n();
+let refreshRequestId = 0;
+let scheduledRefreshId: number | undefined;
 
 const isPrimaryWindow = computed(() => windowContext.value?.role === "primary");
 const isWindowContextReady = computed(() => Boolean(windowContext.value));
@@ -222,10 +224,25 @@ async function sendMessage<T>(message: Record<string, unknown>) {
 async function refreshTabs() {
   if (!isPrimaryWindow.value || currentWindowId.value === undefined) return;
 
-  workspaceState.value = await sendMessage<WorkspaceState>({
+  const requestId = ++refreshRequestId;
+  const nextState = await sendMessage<WorkspaceState>({
     type: "GET_WORKSPACE_STATE",
     windowId: currentWindowId.value,
   });
+  if (requestId === refreshRequestId) {
+    workspaceState.value = nextState;
+  }
+}
+
+function scheduleRefreshTabs() {
+  if (scheduledRefreshId !== undefined) {
+    window.clearTimeout(scheduledRefreshId);
+  }
+
+  scheduledRefreshId = window.setTimeout(() => {
+    scheduledRefreshId = undefined;
+    void refreshTabs();
+  }, 80);
 }
 
 async function refreshWindowContext() {
@@ -952,22 +969,46 @@ onMounted(async () => {
     openColorPickerGroupId.value = null;
   });
 
-  chrome.tabs.onCreated.addListener(refreshTabs);
-  chrome.tabs.onUpdated.addListener(refreshTabs);
-  chrome.tabs.onMoved.addListener(refreshTabs);
-  chrome.tabs.onAttached.addListener(refreshTabs);
-  chrome.tabs.onDetached.addListener(refreshTabs);
-  chrome.tabs.onRemoved.addListener(refreshTabs);
-  chrome.tabs.onActivated.addListener(refreshTabs);
-  chrome.tabGroups.onCreated.addListener(refreshTabs);
-  chrome.tabGroups.onUpdated.addListener(refreshTabs);
-  chrome.tabGroups.onMoved.addListener(refreshTabs);
-  chrome.tabGroups.onRemoved.addListener(refreshTabs);
-  chrome.bookmarks.onCreated.addListener(refreshTabs);
-  chrome.bookmarks.onChanged.addListener(refreshTabs);
-  chrome.bookmarks.onMoved.addListener(refreshTabs);
-  chrome.bookmarks.onRemoved.addListener(refreshTabs);
-  chrome.bookmarks.onChildrenReordered.addListener(refreshTabs);
+  chrome.tabs.onCreated.addListener(scheduleRefreshTabs);
+  chrome.tabs.onUpdated.addListener(scheduleRefreshTabs);
+  chrome.tabs.onMoved.addListener(scheduleRefreshTabs);
+  chrome.tabs.onAttached.addListener(scheduleRefreshTabs);
+  chrome.tabs.onDetached.addListener(scheduleRefreshTabs);
+  chrome.tabs.onRemoved.addListener(scheduleRefreshTabs);
+  chrome.tabs.onActivated.addListener(scheduleRefreshTabs);
+  chrome.tabGroups.onCreated.addListener(scheduleRefreshTabs);
+  chrome.tabGroups.onUpdated.addListener(scheduleRefreshTabs);
+  chrome.tabGroups.onMoved.addListener(scheduleRefreshTabs);
+  chrome.tabGroups.onRemoved.addListener(scheduleRefreshTabs);
+  chrome.bookmarks.onCreated.addListener(scheduleRefreshTabs);
+  chrome.bookmarks.onChanged.addListener(scheduleRefreshTabs);
+  chrome.bookmarks.onMoved.addListener(scheduleRefreshTabs);
+  chrome.bookmarks.onRemoved.addListener(scheduleRefreshTabs);
+  chrome.bookmarks.onChildrenReordered.addListener(scheduleRefreshTabs);
+});
+
+onUnmounted(() => {
+  if (scheduledRefreshId !== undefined) {
+    window.clearTimeout(scheduledRefreshId);
+    scheduledRefreshId = undefined;
+  }
+
+  chrome.tabs.onCreated.removeListener(scheduleRefreshTabs);
+  chrome.tabs.onUpdated.removeListener(scheduleRefreshTabs);
+  chrome.tabs.onMoved.removeListener(scheduleRefreshTabs);
+  chrome.tabs.onAttached.removeListener(scheduleRefreshTabs);
+  chrome.tabs.onDetached.removeListener(scheduleRefreshTabs);
+  chrome.tabs.onRemoved.removeListener(scheduleRefreshTabs);
+  chrome.tabs.onActivated.removeListener(scheduleRefreshTabs);
+  chrome.tabGroups.onCreated.removeListener(scheduleRefreshTabs);
+  chrome.tabGroups.onUpdated.removeListener(scheduleRefreshTabs);
+  chrome.tabGroups.onMoved.removeListener(scheduleRefreshTabs);
+  chrome.tabGroups.onRemoved.removeListener(scheduleRefreshTabs);
+  chrome.bookmarks.onCreated.removeListener(scheduleRefreshTabs);
+  chrome.bookmarks.onChanged.removeListener(scheduleRefreshTabs);
+  chrome.bookmarks.onMoved.removeListener(scheduleRefreshTabs);
+  chrome.bookmarks.onRemoved.removeListener(scheduleRefreshTabs);
+  chrome.bookmarks.onChildrenReordered.removeListener(scheduleRefreshTabs);
 });
 </script>
 
