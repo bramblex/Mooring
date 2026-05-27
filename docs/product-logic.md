@@ -72,14 +72,19 @@ Unmanaged 区域显示当前主窗口里未被 Mooring 管理的 Chrome 状态�
 - 未管理 Chrome Group 显示为 unmanaged Chrome Group。
 - Unmanaged 区域显示在 Workspace 管理区下面。
 - Unmanaged 区域不写 bookmark。
-- Unmanaged Chrome Group 保留 Chrome 的颜色和标题，只做简易展示。
-- Mooring 不主动修改 unmanaged Chrome Group，除非用户把其中的 Chrome Tab / Chrome Group 移入 Workspace。
+- Unmanaged Chrome Group 保留 Chrome 的颜色和标题。
+- Unmanaged Chrome Group 标题允许为空；Mooring 不提供兜底标题文案，以便和 Chrome 原生表现一致。
+- Unmanaged Chrome Group 是 Chrome 原生分组，不是 Mooring Workspace。
+- Unmanaged Chrome Group 可以在侧边栏里重命名、修改颜色和解散；修改会同步到 Chrome Group。
+- Unmanaged Chrome Group 只用轻量有色边框标识，不能和 Workspace 使用同一套容器视觉。
+- Mooring 不把 unmanaged Chrome Group 自动转换为 Workspace。
 
 边界规则：
 
 - 如果用户在 Chrome 里手动创建不匹配任何 Workspace 的 Chrome Group，它留在 Unmanaged 区。
 - 如果 unmanaged Chrome Tab 被拖入 Workspace，它变成 Workspace 内 Temp Page。
-- 如果 unmanaged Chrome Group 被拖入 Workspace 管理区，Mooring 需要按 Workspace 匹配规则处理；不匹配时仍保持 unmanaged。
+- 如果 unmanaged Chrome Group 被拖入 Workspace，该 Group 内所有 Chrome Tab 都进入目标 Workspace，成为 Temp Page；原 Chrome Group 不变成 Workspace。
+- 如果 unmanaged Chrome Group 不被拖入 Workspace，它始终只是 Chrome Group。
 
 ## Workspace 和 Chrome Group 管理逻辑
 
@@ -87,6 +92,7 @@ Workspace 是 Mooring 的长期容器；Chrome Group 是 Workspace 在主窗口�
 
 Workspace 的长期属性写在 bookmark 文件夹 title 上：
 
+- 名称：不能为空。
 - 颜色：`[blue] Work`
 - 隐藏状态：`[blue:hidden] Work`
 - 旧格式不带隐藏状态时，默认显示。
@@ -94,6 +100,7 @@ Workspace 的长期属性写在 bookmark 文件夹 title 上：
 ### Workspace 创建
 
 - 只能在主窗口侧边栏创建 Workspace。
+- 默认名称使用 `Workspace 1`、`Workspace 2` 这种短名字。
 - 创建空 Workspace 只创建 bookmark 文件夹，不创建 Chrome Group。
 - 只有当 Workspace 内某个 Page 被打开时，才创建并绑定 Chrome Group。
 - Workspace 可以没有任何打开的 Page，此时对应 Chrome Group 可以不存在。
@@ -127,15 +134,16 @@ Workspace 的长期属性写在 bookmark 文件夹 title 上：
 - 如果匹配成功，且 Workspace 已经打开，把该 Chrome Group 里的 Chrome Tabs 合并进 Workspace 已绑定的 Chrome Group，然后解除原 Chrome Group。
 - 如果匹配失败，作为 unmanaged Chrome Group 显示。
 
-匹配只是运行时行为，不会创建新的 Workspace bookmark 文件夹，除非用户显式导入或创建。
+匹配只是运行时行为，不会创建新的 Workspace bookmark 文件夹。
 
-### Unmanaged Chrome Group 纳入 Workspace
+### Unmanaged Chrome Group 移入 Workspace
 
-- 用户可以显式把 unmanaged Chrome Group 转成 Mooring Workspace。
-- 转换时创建 Workspace bookmark 文件夹。
-- Workspace 名称和颜色使用 Chrome Group title / color。
-- 原 Chrome Group 绑定到新 Workspace。
-- Group 内 Chrome Tabs 成为该 Workspace 的 Temp Page，不自动写 bookmark。
+- 用户可以把 unmanaged Chrome Group 拖到某个 Workspace。
+- 该操作不会创建 Workspace bookmark 文件夹。
+- Chrome Group title / color 不会写入 Workspace。
+- Group 内 Chrome Tabs 批量移动到目标 Workspace 的运行时 Chrome Group。
+- 这些 Chrome Tabs 在目标 Workspace 内都是 Temp Page，不自动写 bookmark。
+- 如果目标 Workspace 当前没有 Chrome Group，用第一批移入的 Chrome Tab 创建 Workspace 的运行时 Chrome Group。
 
 ### Chrome Group 解散
 
@@ -146,6 +154,12 @@ Workspace 的长期属性写在 bookmark 文件夹 title 上：
 - Pinned Page 保留 bookmark，并解绑 Chrome Tab。
 - 原先打开的 Chrome Tabs 变成 unmanaged Temp Pages。
 - 如果用户再次点击 Pinned Page，Mooring 会重新创建 Chrome Tab 和 Chrome Group。
+
+当 unmanaged Chrome Group 被用户在 Mooring 侧边栏里解散：
+
+- 该 Chrome Group 内 Chrome Tabs 变成 unmanaged 普通 Chrome Tabs。
+- 不创建 Workspace，不写 bookmark，不改变 Mooring managed 区域。
+- 原 Chrome Group title / color 不进入 Mooring 长期数据。
 
 ## Page 和 Chrome Tab 管理逻辑
 
@@ -245,7 +259,10 @@ Chrome Tab index 和 Chrome Group index 不作为 Mooring managed 的排序来�
 
 - Unmanaged Chrome Tab 顺序来自 Chrome Tab index。
 - Unmanaged Chrome Group 顺序来自 Chrome 当前顺序。
-- 在 Unmanaged 区拖动 Page 时，可以同步 Chrome Tab index。
+- Unmanaged 区普通 Chrome Tab 和 Chrome Group 可以互相拖动排序。
+- 在 Unmanaged 区拖动普通 Chrome Tab 时，同步 Chrome Tab index。
+- 在 Unmanaged 区拖动 Chrome Group 时，同步 Chrome Group index。
+- Unmanaged Chrome Group 内的 Page 可以拖动排序，并同步对应 Chrome Tab 在该 Chrome Group 内的顺序。
 - Unmanaged 区不写 bookmark，也不写 Mooring runtime managed 顺序。
 
 ### 恢复位置

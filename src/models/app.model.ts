@@ -91,8 +91,37 @@ type AppMessage =
         index: number;
     }
     | {
-        type: "IMPORT_UNMANAGED_GROUP";
+        type: "RENAME_UNMANAGED_GROUP";
         groupId: number;
+        title: string;
+    }
+    | {
+        type: "UNGROUP_UNMANAGED_GROUP";
+        groupId: number;
+    }
+    | {
+        type: "UPDATE_UNMANAGED_GROUP_COLOR";
+        groupId: number;
+        color: TabGroupColor;
+    }
+    | {
+        type: "MOVE_UNMANAGED_ITEM";
+        itemType: "page" | "group";
+        itemId: string | number;
+        index: number;
+        windowId?: number;
+    }
+    | {
+        type: "MOVE_UNMANAGED_PAGE_TO_GROUP";
+        pageId: string;
+        groupId: number;
+        index: number;
+    }
+    | {
+        type: "MOVE_UNMANAGED_GROUP_TO_WORKSPACE";
+        groupId: number;
+        workspaceId: string;
+        index: number;
     };
 
 export class AppModel {
@@ -307,8 +336,33 @@ export class AppModel {
             case "MOVE_WORKSPACE":
                 await this.workspace.moveWorkspace(message.sourceWorkspaceId, message.index);
                 return { ok: true };
-            case "IMPORT_UNMANAGED_GROUP":
-                await this.workspace.importUnmanagedGroup(message.groupId);
+            case "RENAME_UNMANAGED_GROUP":
+                await this.workspace.renameUnmanagedGroup(message.groupId, message.title);
+                return { ok: true };
+            case "UNGROUP_UNMANAGED_GROUP":
+                await this.workspace.ungroupUnmanagedGroup(message.groupId);
+                return { ok: true };
+            case "UPDATE_UNMANAGED_GROUP_COLOR":
+                await this.workspace.updateUnmanagedGroupColor(message.groupId, message.color);
+                return { ok: true };
+            case "MOVE_UNMANAGED_ITEM":
+                if (!message.windowId) return { ok: false };
+                await this.workspace.moveUnmanagedItem(
+                    message.itemType,
+                    message.itemId,
+                    message.index,
+                    message.windowId,
+                );
+                return { ok: true };
+            case "MOVE_UNMANAGED_PAGE_TO_GROUP":
+                await this.workspace.moveUnmanagedPageToGroup(message.pageId, message.groupId, message.index);
+                return { ok: true };
+            case "MOVE_UNMANAGED_GROUP_TO_WORKSPACE":
+                await this.workspace.moveUnmanagedGroupToWorkspace(
+                    message.groupId,
+                    message.workspaceId,
+                    message.index,
+                );
                 return { ok: true };
             default:
                 return { ok: false };

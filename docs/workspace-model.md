@@ -156,8 +156,10 @@ Mooring 在扫描主窗口时按名称和颜色尝试匹配 Workspace：
 
 ### 重命名
 
-1. 更新 Workspace 文件夹 title。
-2. 如果当前存在绑定的 Chrome Group，同步更新 Chrome Group title。
+1. Workspace 名称不允许为空。
+2. 如果用户提交空名称，视为取消重命名，保留原文件夹 title。
+3. 非空名称会更新 Workspace 文件夹 title。
+4. 如果当前存在绑定的 Chrome Group，同步更新 Chrome Group title。
 
 ### 修改颜色
 
@@ -178,13 +180,13 @@ Mooring 在扫描主窗口时按名称和颜色尝试匹配 Workspace：
 4. Pinned Page 对应的 Bookmark 随文件夹删除。
 5. 已打开 Chrome Tab 释放到 unmanaged 区，不直接关闭。
 
-### 从 Unmanaged Group 创建
+### 从 Unmanaged Group 移入
 
-1. 用户显式选择 unmanaged Chrome Group。
-2. 创建 Workspace 书签文件夹。
-3. Workspace 名称和颜色来自 Chrome Group title / color。
-4. 绑定该 Chrome Group 到新 Workspace。
-5. Group 内 Chrome Tab 成为 Temp Page，不自动创建 Bookmark。
+1. 用户把 unmanaged Chrome Group 拖到目标 Workspace。
+2. 不创建新的 Workspace 书签文件夹。
+3. 不把 Chrome Group title / color 写入 Workspace。
+4. Group 内 Chrome Tab 批量加入目标 Workspace 对应的运行时 Chrome Group。
+5. Group 内 Chrome Tab 成为目标 Workspace 的 Temp Page，不自动创建 Bookmark。
 
 ## Workspace 排序
 
@@ -226,7 +228,9 @@ Workspace 只负责容器身份和 Workspace 顺序：
 - Unmanaged 区不改变 Mooring managed 排序。
 - Mooring 管理区排在 unmanaged 区前面。
 - unmanaged Chrome Tab 可以被移动到 Workspace，成为该 Workspace 的 Temp Page。
-- unmanaged Chrome Group 可以按匹配规则绑定或合并进 Workspace。
+- unmanaged Chrome Group 可以被拖到 Workspace；这只批量移动 Group 内 Chrome Tab，不创建 Workspace。
+- unmanaged Chrome Group 自身保持 Chrome 原生概念，可以在 unmanaged 区改名、改色、解散、排序。
+- unmanaged Chrome Group 标题允许为空，Mooring 不用 Workspace 默认名兜底。
 - Unmanaged 区排序跟随 Chrome 当前 Window / Group / Tab 顺序。
 
 ## 不做的事

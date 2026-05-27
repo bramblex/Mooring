@@ -19,13 +19,14 @@
 - 删除 Workspace 不直接关闭 Chrome Tabs，避免数据损失。
 - 状态：已实现。
 
-### Unmanaged Chrome Group 纳入 Mooring
+### Unmanaged Chrome Group 临时管理
 
-- Unmanaged Chrome Group 可以显式转成 Mooring Workspace。
-- 转换时创建 Workspace bookmark folder。
-- Workspace 名称和颜色使用 Chrome Group title / color。
-- 原 Chrome Group 绑定到新 Workspace。
-- Group 内 Chrome Tabs 成为该 Workspace 的 Temp Page，不自动写 bookmark。
+- Unmanaged Chrome Group 严格保持 Chrome 原生概念，不自动转成 Mooring Workspace。
+- Unmanaged 区域允许 Chrome Tab 和 Chrome Group 混排，并同步 Chrome 当前顺序。
+- Unmanaged Chrome Group 可以改名、改色、解散，并同步到 Chrome Group。
+- Unmanaged Chrome Group 标题可以为空，不使用 Workspace 默认名兜底。
+- Unmanaged Chrome Group 内的 Chrome Tab 可以拖动排序。
+- Unmanaged Chrome Group 拖入 Workspace 时，只批量移动其中 Chrome Tabs；不创建 Workspace bookmark folder。
 - 状态：已实现。
 
 ## MVP 后可继续完善
