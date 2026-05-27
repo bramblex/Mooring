@@ -417,6 +417,39 @@ h2 {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--group-color, var(--color-focus)) 22%, transparent);
 }
 
+.empty-workspace-drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  border: 1px dashed color-mix(in srgb, var(--group-color, var(--color-focus)) 42%, var(--color-surface-border));
+  border-radius: 6px;
+  color: var(--color-muted);
+  font-size: 12px;
+  list-style: none;
+  background: color-mix(in srgb, var(--group-color, var(--color-focus)) 5%, transparent);
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.empty-workspace-drop.active {
+  border-color: var(--group-color, var(--color-focus));
+  color: var(--color-focus);
+  background: color-mix(in srgb, var(--group-color, var(--color-focus)) 11%, transparent);
+}
+
+.unmanaged-empty-drop {
+  border-color: var(--color-surface-border);
+  background: var(--color-surface);
+}
+
+.unmanaged-empty-drop.active {
+  border-color: var(--color-focus);
+  background: color-mix(in srgb, var(--color-focus) 9%, transparent);
+}
+
 .unmanaged-group {
   display: flex;
   flex-direction: column;

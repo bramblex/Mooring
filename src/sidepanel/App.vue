@@ -696,6 +696,16 @@ onMounted(async () => {
         </div>
 
         <ol v-if="!workspace.collapsed" class="tabs">
+          <li
+            v-if="workspace.pages.length === 0"
+            class="empty-workspace-drop"
+            :class="{ active: dragOverKey === pageGapKey(workspace.id, 0) }"
+            @dragover="onPageGapDragOver(workspace.id, 0, $event)"
+            @dragleave="onDragLeave(pageGapKey(workspace.id, 0))"
+            @drop="onPageGapDrop(workspace.id, 0, $event)"
+          >
+            {{ t("emptyWorkspaceDrop") }}
+          </li>
           <template v-for="(page, pageIndex) in workspace.pages" :key="page.id">
             <li
               class="tab-drop-gap"
@@ -825,11 +835,17 @@ onMounted(async () => {
       <section
         class="group-section ungrouped"
       >
-        <div class="group-header">
-          <h2>{{ t("unmanaged") }}</h2>
-        </div>
-
         <ol class="tabs">
+          <li
+            v-if="workspaceState.unmanagedPages.length === 0"
+            class="empty-workspace-drop unmanaged-empty-drop"
+            :class="{ active: dragOverKey === pageGapKey(null, 0) }"
+            @dragover="onPageGapDragOver(null, 0, $event)"
+            @dragleave="onDragLeave(pageGapKey(null, 0))"
+            @drop="onPageGapDrop(null, 0, $event)"
+          >
+            {{ t("emptyUnmanagedDrop") }}
+          </li>
           <template v-for="(page, pageIndex) in workspaceState.unmanagedPages" :key="page.id">
             <li
               class="tab-drop-gap"
