@@ -80,6 +80,11 @@ const GROUP_COLOR_STYLES: Record<TabGroupColor, Record<string, string>> = {
   },
 };
 
+type ConfirmDialog = {
+  message: string;
+  resolve: (confirmed: boolean) => void;
+};
+
 const workspaceState = ref<WorkspaceState>({
   workspaces: [],
   unmanagedPages: [],
@@ -96,6 +101,7 @@ const workspaceTitleInputs = ref<Record<string, HTMLInputElement | null>>({});
 const pageTitleInputs = ref<Record<string, HTMLInputElement | null>>({});
 const workspaceSectionElements = ref<Record<string, HTMLElement | null>>({});
 const unmanagedSectionElement = ref<HTMLElement | null>(null);
+const confirmDialog = ref<ConfirmDialog | null>(null);
 const windowContext = ref<WindowContext | null>(null);
 const currentWindowId = ref<number | undefined>();
 const { t } = useI18n();
@@ -170,6 +176,19 @@ function isEditableElement(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
 
   return Boolean(target.closest("input, textarea, [contenteditable='true']"));
+}
+
+function requestConfirm(message: string) {
+  return new Promise<boolean>((resolve) => {
+    confirmDialog.value = { message, resolve };
+  });
+}
+
+function closeConfirmDialog(confirmed: boolean) {
+  if (!confirmDialog.value) return;
+
+  confirmDialog.value.resolve(confirmed);
+  confirmDialog.value = null;
 }
 
 async function sendMessage<T>(message: Record<string, unknown>) {
@@ -283,7 +302,7 @@ async function toggleWorkspace(workspace: WorkspaceView) {
 }
 
 async function deleteWorkspace(workspace: WorkspaceView) {
-  if (!window.confirm(t("deleteWorkspaceConfirm"))) return;
+  if (!await requestConfirm(t("deleteWorkspaceConfirm"))) return;
 
   await sendMessage({
     type: "DELETE_WORKSPACE",
@@ -302,7 +321,7 @@ async function closeWorkspacePages(workspace: WorkspaceView) {
 
 async function togglePinnedPage(workspace: WorkspaceView | null, page: PageModel) {
   if (page.pinned) {
-    if (!window.confirm(t("unpinPageConfirm"))) return;
+    if (!await requestConfirm(t("unpinPageConfirm"))) return;
 
     await sendMessage({
       type: "UNPIN_PAGE",
@@ -1158,5 +1177,39 @@ onMounted(async () => {
     >
       <Plus :size="22" aria-hidden="true" />
     </button>
+
+    <div
+      v-if="confirmDialog"
+      class="confirm-overlay"
+      role="presentation"
+      @click.self="closeConfirmDialog(false)"
+      @keydown.esc="closeConfirmDialog(false)"
+    >
+      <section
+        class="confirm-dialog"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="confirmDialog.message"
+      >
+        <p>{{ confirmDialog.message }}</p>
+        <div class="confirm-actions">
+          <button
+            class="confirm-button"
+            type="button"
+            autofocus
+            @click="closeConfirmDialog(false)"
+          >
+            {{ t("cancel") }}
+          </button>
+          <button
+            class="confirm-button danger"
+            type="button"
+            @click="closeConfirmDialog(true)"
+          >
+            {{ t("confirm") }}
+          </button>
+        </div>
+      </section>
+    </div>
   </main>
 </template>
