@@ -47,11 +47,17 @@ type AppMessage =
         type: "OPEN_WORKSPACE_PAGE";
         workspaceId: string;
         pageId: string;
+        chromeTabId?: number;
         windowId?: number;
     }
     | {
         type: "CLOSE_WORKSPACE_PAGE";
         chromeTabId: number;
+    }
+    | {
+        type: "RESTORE_PINNED_PAGE";
+        bookmarkId: string;
+        chromeTabId?: number;
     }
     | {
         type: "PIN_PAGE";
@@ -260,10 +266,18 @@ export class AppModel {
                 return { ok: true };
             case "OPEN_WORKSPACE_PAGE":
                 if (!message.windowId) return { ok: false };
-                await this.workspace.openWorkspacePage(message.workspaceId, message.pageId, message.windowId);
+                await this.workspace.openWorkspacePage(
+                    message.workspaceId,
+                    message.pageId,
+                    message.windowId,
+                    message.chromeTabId,
+                );
                 return { ok: true };
             case "CLOSE_WORKSPACE_PAGE":
                 await this.workspace.closeWorkspacePage(message.chromeTabId);
+                return { ok: true };
+            case "RESTORE_PINNED_PAGE":
+                await this.workspace.restorePinnedPage(message.bookmarkId, message.chromeTabId);
                 return { ok: true };
             case "PIN_PAGE":
                 await this.workspace.pinPage(message.workspaceId, message.chromeTabId);

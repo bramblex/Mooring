@@ -48,6 +48,7 @@ Pinned Page 是 Harbor 的长期 Page。
 - 标题显示 `bookmark title · current Chrome Tab title`。
 - 不自动更新 bookmark URL。
 - 不自动取消固定。
+- dirty 标识是可点击恢复入口，点击后把当前 Chrome Tab 导回 bookmark URL。
 
 ## 数据结构模板
 
@@ -90,6 +91,8 @@ Pinned Page：
 - 长期绑定 bookmark。
 - 打开时临时绑定 Chrome Tab。
 - `bookmarkId <-> chromeTabId` 绑定只在当前运行时有效。
+- 该绑定可以缓存在 `chrome.storage.session`，用于 service worker 唤醒后避免重复打开同一个 Pinned Page。
+- 使用缓存前必须确认 Chrome Tab 仍然存在；不存在时清理缓存并按关闭态 Pinned Page 处理。
 
 打开 Pinned Page：
 
@@ -224,5 +227,6 @@ Unmanaged 区域里的 Chrome Tab 可以显示为 unmanaged Temp Page。
 
 - 不把 Harbor Page 简称为 Tab。
 - 不用 Chrome Tab ID 作为 Pinned Page identity。
+- 不把 `chrome.storage.session` 里的 Chrome Tab ID 当长期身份。
 - 不让关闭 Chrome Tab 删除 Pinned Page。
 - 不自动把 dirty Page 当前 URL 写回 bookmark。

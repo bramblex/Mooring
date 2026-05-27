@@ -81,6 +81,13 @@ type RuntimeWorkspaceBinding = {
 
 `groupId` 只能作为当前浏览器会话里的运行时绑定，不能作为长期 ID。
 
+运行时绑定可以缓存在 `chrome.storage.session`：
+
+- `workspaceId <-> groupId` 用于 service worker 唤醒后找回已打开 Workspace。
+- `groupId` 读取后必须通过 `chrome.tabGroups.get` 或当前窗口扫描校验。
+- 失效的 `groupId` 要从缓存中删除。
+- `chrome.storage.session` 不承载 Workspace 长期结构，长期结构仍只来自 bookmark。
+
 ## Chrome Group 映射
 
 一个 Workspace 在主窗口里最多绑定一个 Chrome Group。
@@ -226,5 +233,6 @@ Workspace 只负责容器身份和 Workspace 顺序：
 
 - 不把 Workspace 列表存入 `chrome.storage.local`。
 - 不把 Chrome Group ID 写成长期数据。
+- 不把 `chrome.storage.session` 当作长期数据来源。
 - 不让 Chrome session restore 覆盖 `Harbor Workspace` 书签结构。
 - 不把 Harbor Page 简称为 Tab。

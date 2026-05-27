@@ -44,6 +44,13 @@ const NO_GROUP = chrome.tabGroups.TAB_GROUP_ID_NONE;
 const WORKSPACE_TITLE_RE = /^\[(grey|blue|red|yellow|green|pink|purple|cyan|orange)(?::(shown|hidden))?\]\s*(.*)$/;
 
 const BOOKMARK_BAR_ID = "1";
+const RUNTIME_BINDINGS_STORAGE_KEY = "harborRuntimeBindings";
+
+type RuntimeBindingsStorage = {
+  workspaceGroupIds?: Array<[string, number]>;
+  chromeTabBookmarkIds?: Array<[number, string]>;
+  workspaceTempPageOrders?: Array<[string, number[]]>;
+};
 
 function parseWorkspaceTitle(title: string): ParsedWorkspaceTitle {
   const match = title.match(WORKSPACE_TITLE_RE);
@@ -94,6 +101,7 @@ export class WorkspaceModel {
   private groupWorkspaceIds = new Map<number, string>();
   private chromeTabBookmarkIds = new Map<number, string>();
   private workspaceTempPageOrders = new Map<string, number[]>();
+  private runtimeBindingsLoaded = false;
   private shouldRebuildRuntimeBindings = false;
 
   clearRuntimeBindings() {
@@ -101,6 +109,8 @@ export class WorkspaceModel {
     this.groupWorkspaceIds.clear();
     this.chromeTabBookmarkIds.clear();
     this.workspaceTempPageOrders.clear();
+    this.runtimeBindingsLoaded = true;
+    void this.persistRuntimeBindings();
     this.markRuntimeBindingsRebuildNeeded();
   }
 
@@ -109,6 +119,8 @@ export class WorkspaceModel {
   }
 
   async getState(windowId: number): Promise<WorkspaceState> {
+    await this.ensureRuntimeBindingsLoaded();
+
     const root = await this.ensureRootFolder();
     let groups = await chrome.tabGroups.query({ windowId });
     let tabs = await chrome.tabs.query({ windowId });
@@ -195,6 +207,8 @@ export class WorkspaceModel {
   }
 
   async createWorkspace(windowId: number) {
+    await this.ensureRuntimeBindingsLoaded();
+
     const root = await this.ensureRootFolder();
     const folder = await chrome.bookmarks.create({
       parentId: root.id,
@@ -208,6 +222,8 @@ export class WorkspaceModel {
   }
 
   async renameWorkspace(workspaceId: string, name: string) {
+    await this.ensureRuntimeBindingsLoaded();
+
     const folder = await this.getWorkspaceFolder(workspaceId);
     const parsed = parseWorkspaceTitle(folder.title);
     const nextName = name.trim() || DEFAULT_WORKSPACE_NAME;
@@ -223,6 +239,8 @@ export class WorkspaceModel {
   }
 
   async updateWorkspaceColor(workspaceId: string, color: TabGroupColor) {
+    await this.ensureRuntimeBindingsLoaded();
+
     const folder = await this.getWorkspaceFolder(workspaceId);
     const parsed = parseWorkspaceTitle(folder.title);
 
@@ -237,6 +255,8 @@ export class WorkspaceModel {
   }
 
   async toggleWorkspace(workspaceId: string) {
+    await this.ensureRuntimeBindingsLoaded();
+
     const folder = await this.getWorkspaceFolder(workspaceId);
     const parsed = parseWorkspaceTitle(folder.title);
     const collapsed = !parsed.collapsed;
@@ -254,6 +274,8 @@ export class WorkspaceModel {
   }
 
   async deleteWorkspace(workspaceId: string) {
+    await this.ensureRuntimeBindingsLoaded();
+
     const groupId = this.workspaceGroupIds.get(workspaceId);
 
     await chrome.bookmarks.removeTree(workspaceId);
@@ -271,9 +293,12 @@ export class WorkspaceModel {
     }
 
     this.workspaceGroupIds.delete(workspaceId);
+    void this.persistRuntimeBindings();
   }
 
   async importUnmanagedGroup(groupId: number) {
+    await this.ensureRuntimeBindingsLoaded();
+
     if (this.groupWorkspaceIds.has(groupId)) return;
 
     const group = await chrome.tabGroups.get(groupId);
@@ -288,15 +313,27 @@ export class WorkspaceModel {
     this.bindWorkspace(folder.id, group.id);
   }
 
-  async openWorkspacePage(workspaceId: string, pageId: string, windowId: number) {
-    const parsedId = this.parsePageId(pageId);
+  async openWorkspacePage(
+    workspaceId: string,
+    pageId: string,
+    windowId: number,
+    preferredChromeTabId?: number,
+  ) {
+    await this.ensureRuntimeBindingsLoaded();
 
-    if (parsedId.chromeTabId && await this.chromeTabExists(parsedId.chromeTabId)) {
-      await chrome.tabs.update(parsedId.chromeTabId, { active: true });
+    const parsedId = this.parsePageId(pageId);
+    const bookmarkId = parsedId.bookmarkId;
+
+    const existingChromeTabId = preferredChromeTabId || parsedId.chromeTabId;
+    if (existingChromeTabId && await this.chromeTabExists(existingChromeTabId)) {
+      if (bookmarkId) {
+        this.chromeTabBookmarkIds.set(existingChromeTabId, bookmarkId);
+        void this.persistRuntimeBindings();
+      }
+      await chrome.tabs.update(existingChromeTabId, { active: true });
       return;
     }
 
-    const bookmarkId = parsedId.bookmarkId;
     if (!bookmarkId) return;
 
     const openChromeTabId = await this.findOpenChromeTabIdByBookmarkId(bookmarkId);
@@ -326,14 +363,42 @@ export class WorkspaceModel {
       await chrome.tabs.group({ tabIds: tab.id, groupId });
     }
     this.chromeTabBookmarkIds.set(tab.id, bookmarkId);
+    void this.persistRuntimeBindings();
   }
 
   async closeWorkspacePage(chromeTabId: number) {
+    await this.ensureRuntimeBindingsLoaded();
+
     await chrome.tabs.remove(chromeTabId);
     this.chromeTabBookmarkIds.delete(chromeTabId);
+    this.removeTempPageOrder(chromeTabId);
+    void this.persistRuntimeBindings();
+  }
+
+  async restorePinnedPage(bookmarkId: string, chromeTabId?: number) {
+    await this.ensureRuntimeBindingsLoaded();
+
+    const [bookmark] = await chrome.bookmarks.get(bookmarkId);
+    if (!bookmark?.url) return;
+
+    const openChromeTabId = chromeTabId && await this.chromeTabExists(chromeTabId)
+      ? chromeTabId
+      : await this.findOpenChromeTabIdByBookmarkId(bookmarkId);
+    if (!openChromeTabId) return;
+
+    // docs/page-model.md: Dirty Pinned Page 不自动更新 bookmark URL；
+    // 用户显式恢复时，把当前 Chrome Tab 导回 bookmark URL。
+    await chrome.tabs.update(openChromeTabId, {
+      url: bookmark.url,
+      active: true,
+    });
+    this.chromeTabBookmarkIds.set(openChromeTabId, bookmarkId);
+    void this.persistRuntimeBindings();
   }
 
   async pinPage(workspaceId: string, chromeTabId: number) {
+    await this.ensureRuntimeBindingsLoaded();
+
     const tab = await chrome.tabs.get(chromeTabId);
     if (!canBookmarkTab(tab)) return;
 
@@ -347,9 +412,12 @@ export class WorkspaceModel {
       url: chromeTabUrl(tab),
     });
     this.chromeTabBookmarkIds.set(chromeTabId, bookmark.id);
+    void this.persistRuntimeBindings();
   }
 
   async unpinPage(chromeTabId?: number, bookmarkId?: string) {
+    await this.ensureRuntimeBindingsLoaded();
+
     const resolvedBookmarkId = bookmarkId || (chromeTabId ? this.chromeTabBookmarkIds.get(chromeTabId) : undefined);
     if (!resolvedBookmarkId) return;
 
@@ -358,6 +426,7 @@ export class WorkspaceModel {
 
     if (chromeTabId) {
       this.chromeTabBookmarkIds.delete(chromeTabId);
+      void this.persistRuntimeBindings();
       return;
     }
 
@@ -367,15 +436,20 @@ export class WorkspaceModel {
         await this.appendTempPageOrderForTab(openTabId);
       }
     }
+    void this.persistRuntimeBindings();
   }
 
   async updatePinnedPageTitle(bookmarkId: string, title: string) {
+    await this.ensureRuntimeBindingsLoaded();
+
     await chrome.bookmarks.update(bookmarkId, {
       title: title.trim() || "Untitled page",
     });
   }
 
   async movePageToWorkspace(pageId: string, workspaceId: string | null, index: number, windowId: number) {
+    await this.ensureRuntimeBindingsLoaded();
+
     const parsedId = this.parsePageId(pageId);
     const bookmarkId = parsedId.bookmarkId
       || (parsedId.chromeTabId ? this.chromeTabBookmarkIds.get(parsedId.chromeTabId) : undefined);
@@ -418,6 +492,8 @@ export class WorkspaceModel {
   }
 
   async moveWorkspace(sourceWorkspaceId: string, targetWorkspaceId: string) {
+    await this.ensureRuntimeBindingsLoaded();
+
     const root = await this.ensureRootFolder();
     const folders = await this.listWorkspaceFolders(root.id);
     const targetFolder = folders.find((folder) => folder.id === targetWorkspaceId);
@@ -445,6 +521,37 @@ export class WorkspaceModel {
     }
   }
 
+  private async ensureRuntimeBindingsLoaded() {
+    if (this.runtimeBindingsLoaded) return;
+
+    // docs/产品逻辑文档.md: Runtime Binding 可以用 chrome.storage.session
+    // 跨 service worker 唤醒恢复，但读取后仍需在扫描时验证是否有效。
+    const stored = await chrome.storage.session.get(RUNTIME_BINDINGS_STORAGE_KEY);
+    const bindings = stored[RUNTIME_BINDINGS_STORAGE_KEY] as RuntimeBindingsStorage | undefined;
+
+    this.workspaceGroupIds = new Map(bindings?.workspaceGroupIds || []);
+    this.groupWorkspaceIds = new Map(
+      [...this.workspaceGroupIds.entries()].map(([workspaceId, groupId]) => [groupId, workspaceId]),
+    );
+    this.chromeTabBookmarkIds = new Map(bindings?.chromeTabBookmarkIds || []);
+    this.workspaceTempPageOrders = new Map(bindings?.workspaceTempPageOrders || []);
+    this.runtimeBindingsLoaded = true;
+  }
+
+  private async persistRuntimeBindings() {
+    if (!this.runtimeBindingsLoaded) return;
+
+    const bindings: RuntimeBindingsStorage = {
+      workspaceGroupIds: [...this.workspaceGroupIds.entries()],
+      chromeTabBookmarkIds: [...this.chromeTabBookmarkIds.entries()],
+      workspaceTempPageOrders: [...this.workspaceTempPageOrders.entries()],
+    };
+
+    await chrome.storage.session.set({
+      [RUNTIME_BINDINGS_STORAGE_KEY]: bindings,
+    });
+  }
+
   private async getWorkspaceFolder(workspaceId: string) {
     const [folder] = await chrome.bookmarks.get(workspaceId);
     if (!folder) {
@@ -470,6 +577,7 @@ export class WorkspaceModel {
     this.groupWorkspaceIds.clear();
     this.chromeTabBookmarkIds.clear();
     this.workspaceTempPageOrders.clear();
+    void this.persistRuntimeBindings();
   }
 
   private bindKnownGroups(folders: WorkspaceFolder[], groups: chrome.tabGroups.TabGroup[]) {
@@ -524,12 +632,18 @@ export class WorkspaceModel {
 
   private pruneBindings(groups: chrome.tabGroups.TabGroup[]) {
     const validGroupIds = new Set(groups.map((group) => group.id));
+    let changed = false;
 
     for (const [workspaceId, groupId] of this.workspaceGroupIds.entries()) {
       if (validGroupIds.has(groupId)) continue;
 
       this.workspaceGroupIds.delete(workspaceId);
       this.groupWorkspaceIds.delete(groupId);
+      changed = true;
+    }
+
+    if (changed) {
+      void this.persistRuntimeBindings();
     }
   }
 
@@ -550,6 +664,7 @@ export class WorkspaceModel {
 
     this.workspaceGroupIds.set(workspaceId, groupId);
     this.groupWorkspaceIds.set(groupId, workspaceId);
+    void this.persistRuntimeBindings();
   }
 
   private buildWorkspacePages(
@@ -559,6 +674,7 @@ export class WorkspaceModel {
   ): PageModel[] {
     const tabsByBookmarkId = new Map<string, chrome.tabs.Tab>();
     const usedTabIds = new Set<number>();
+    let bindingsChanged = false;
 
     openTabs.forEach((tab) => {
       if (!tab.id) return;
@@ -573,8 +689,13 @@ export class WorkspaceModel {
       if (matchingBookmark) {
         this.chromeTabBookmarkIds.set(tab.id, matchingBookmark.id);
         tabsByBookmarkId.set(matchingBookmark.id, tab);
+        bindingsChanged = true;
       }
     });
+
+    if (bindingsChanged) {
+      void this.persistRuntimeBindings();
+    }
 
     const pinnedTabs = bookmarks.map((bookmark, index) => {
       const tab = tabsByBookmarkId.get(bookmark.id);
@@ -671,11 +792,18 @@ export class WorkspaceModel {
   }
 
   private async findOpenChromeTabIdByBookmarkId(bookmarkId: string) {
+    let bindingsChanged = false;
+
     for (const [tabId, boundBookmarkId] of this.chromeTabBookmarkIds.entries()) {
       if (boundBookmarkId !== bookmarkId) continue;
       if (await this.chromeTabExists(tabId)) return tabId;
 
       this.chromeTabBookmarkIds.delete(tabId);
+      bindingsChanged = true;
+    }
+
+    if (bindingsChanged) {
+      void this.persistRuntimeBindings();
     }
 
     return undefined;
@@ -716,6 +844,7 @@ export class WorkspaceModel {
 
     this.workspaceGroupIds.delete(workspaceId);
     this.groupWorkspaceIds.delete(groupId);
+    void this.persistRuntimeBindings();
     return undefined;
   }
 
@@ -745,7 +874,7 @@ export class WorkspaceModel {
   }
 
   private async moveTempPageOrder(workspaceId: string, chromeTabId: number, displayIndex: number) {
-    this.removeTempPageOrder(chromeTabId);
+    this.removeTempPageOrder(chromeTabId, false);
 
     const bookmarks = (await chrome.bookmarks.getChildren(workspaceId)).filter((node) => node.url);
     const targetTempIndex = displayIndex < 0
@@ -763,6 +892,7 @@ export class WorkspaceModel {
 
     order.splice(Math.min(targetTempIndex, order.length), 0, chromeTabId);
     this.workspaceTempPageOrders.set(workspaceId, order);
+    void this.persistRuntimeBindings();
   }
 
   private reconcileTempPageOrder(
@@ -779,7 +909,12 @@ export class WorkspaceModel {
       }
     });
 
-    this.workspaceTempPageOrders.set(workspaceId, nextOrder);
+    const changed = previousOrder.length !== nextOrder.length
+      || previousOrder.some((id, index) => id !== nextOrder[index]);
+    if (changed) {
+      this.workspaceTempPageOrders.set(workspaceId, nextOrder);
+      void this.persistRuntimeBindings();
+    }
     return nextOrder;
   }
 
@@ -795,13 +930,23 @@ export class WorkspaceModel {
     const order = this.workspaceTempPageOrders.get(workspaceId) || [];
     if (!order.includes(chromeTabId)) {
       this.workspaceTempPageOrders.set(workspaceId, [...order, chromeTabId]);
+      void this.persistRuntimeBindings();
     }
   }
 
-  private removeTempPageOrder(chromeTabId: number) {
+  private removeTempPageOrder(chromeTabId: number, persist = true) {
+    let changed = false;
+
     for (const [workspaceId, order] of this.workspaceTempPageOrders.entries()) {
       const nextOrder = order.filter((id) => id !== chromeTabId);
+      if (nextOrder.length !== order.length) {
+        changed = true;
+      }
       this.workspaceTempPageOrders.set(workspaceId, nextOrder);
+    }
+
+    if (changed && persist) {
+      void this.persistRuntimeBindings();
     }
   }
 }

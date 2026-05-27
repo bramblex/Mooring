@@ -7,6 +7,7 @@ Window 模型定义 Harbor 在多个 Chrome 窗口之间的工作边界。
 - Harbor 只在一个主窗口里提供完整 Workspace / Page 功能。
 - 其他窗口保持临时窗口身份，不自动变成 Workspace 主基地。
 - 主窗口 ID 只保存在运行时内存里，不写入 `chrome.storage.local`。
+- Workspace / Page 与 Chrome Group / Chrome Tab 的运行时绑定可以写入 `chrome.storage.session`，但主窗口 ID 不写入 session。
 - 主窗口关闭后，Workspace / Pinned Page 长期数据仍然由书签树保留。
 
 ## 核心概念
@@ -47,7 +48,7 @@ Chrome 本身没有主窗口概念，主窗口是 Harbor 自己的产品状态�
 主窗口关闭时：
 
 - Harbor 清空内存里的 `primaryWindowId`。
-- Harbor 清空 Workspace / Chrome Group / Page / Chrome Tab 的运行时绑定。
+- Harbor 清空 Workspace / Chrome Group / Page / Chrome Tab 的运行时绑定，并同步清空 `chrome.storage.session` 里的绑定缓存。
 - `Harbor Workspace` 书签目录保留不变。
 - 已存在的其他窗口仍然是临时窗口。
 - Chrome session restore 出来的 Chrome Group 不作为 Harbor 长期状态。

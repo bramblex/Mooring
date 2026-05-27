@@ -510,6 +510,9 @@ h2 {
 }
 
 .tab-title-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   overflow: hidden;
   min-width: 0;
   min-height: 38px;
@@ -577,6 +580,29 @@ h2 {
   color: var(--color-focus);
 }
 
+.dirty-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  min-width: 16px;
+  height: 22px;
+  min-height: 22px;
+  border: 0;
+  padding: 0;
+  color: var(--color-focus);
+  background: transparent;
+}
+
+.dirty-button:hover,
+.dirty-button:focus-visible {
+  color: var(--color-focus);
+  background: transparent;
+  box-shadow: none;
+  filter: brightness(1.08);
+}
+
 .tab-title-button:hover,
 .tab-title-button:focus-visible {
   color: var(--color-focus);
@@ -586,6 +612,8 @@ h2 {
 
 .tab-title {
   display: block;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -602,6 +630,7 @@ h2 {
 }
 
 .dirty-dot {
+  flex: 0 0 auto;
   color: var(--color-focus);
   fill: currentColor;
 }

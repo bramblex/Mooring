@@ -193,6 +193,7 @@ async function openWorkspacePage(workspace: WorkspaceView | null, page: PageMode
     type: "OPEN_WORKSPACE_PAGE",
     workspaceId: workspace.id,
     pageId: page.id,
+    chromeTabId: page.chromeTabId,
     windowId: currentWindowId.value,
   });
   await refreshTabs();
@@ -284,6 +285,17 @@ async function closeWorkspacePage(page: PageModel) {
 
   await sendMessage({
     type: "CLOSE_WORKSPACE_PAGE",
+    chromeTabId: page.chromeTabId,
+  });
+  await refreshTabs();
+}
+
+async function restorePinnedPage(page: PageModel) {
+  if (!page.bookmarkId) return;
+
+  await sendMessage({
+    type: "RESTORE_PINNED_PAGE",
+    bookmarkId: page.bookmarkId,
     chromeTabId: page.chromeTabId,
   });
   await refreshTabs();
@@ -457,13 +469,28 @@ onMounted(async () => {
       <p>
         {{ t("temporaryWindowDescription") }}
       </p>
-      <button type="button" @click="openMainWindowFromPanel">
+      <button
+        type="button"
+        :title="t('openMainWindow')"
+        :aria-label="t('openMainWindow')"
+        @click="openMainWindowFromPanel"
+      >
         {{ t("openMainWindow") }}
       </button>
-      <button type="button" @click="sendCurrentTabFromPanel">
+      <button
+        type="button"
+        :title="t('sendCurrentTabToMainWindow')"
+        :aria-label="t('sendCurrentTabToMainWindow')"
+        @click="sendCurrentTabFromPanel"
+      >
         {{ t("sendCurrentTabToMainWindow") }}
       </button>
-      <button type="button" @click="sendAllTabsFromPanel">
+      <button
+        type="button"
+        :title="t('sendAllTabsToMainWindow')"
+        :aria-label="t('sendAllTabsToMainWindow')"
+        @click="sendAllTabsFromPanel"
+      >
         {{ t("sendAllTabsToMainWindow") }}
       </button>
     </section>
@@ -647,6 +674,16 @@ onMounted(async () => {
             </button>
             <div v-else class="tab-title-static" :title="pageTitle(page)">
               <button
+                v-if="page.dirty"
+                class="dirty-button"
+                type="button"
+                :title="t('restorePinnedPage')"
+                :aria-label="t('restorePinnedPage')"
+                @click.stop="restorePinnedPage(page)"
+              >
+                <Circle class="dirty-dot" :size="8" aria-hidden="true" />
+              </button>
+              <button
                 class="tab-title-button"
                 type="button"
                 :title="pageTitle(page)"
@@ -670,13 +707,6 @@ onMounted(async () => {
               </button>
             </div>
             <div class="tab-actions">
-              <Circle
-                v-if="page.dirty"
-                class="dirty-dot"
-                :size="9"
-                :title="t('pinnedPageDirty')"
-                :aria-label="t('pinnedPageDirty')"
-              />
               <button
                 class="icon-button subtle"
                 type="button"
