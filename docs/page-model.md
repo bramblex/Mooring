@@ -1,10 +1,10 @@
 # Page 模型
 
-Page 模型定义 Harbor 的页面单位，以及 Page 与 Chrome Tab、Bookmark 的关系。
+Page 模型定义 Mooring 的页面单位，以及 Page 与 Chrome Tab、Bookmark 的关系。
 
 ## 目标
 
-- 区分 Harbor Page 和 Chrome Tab。
+- 区分 Mooring Page 和 Chrome Tab。
 - 支持 Pinned Page 关闭后仍保留。
 - 支持 Temp Page 作为当前打开但未固定的临时页面。
 - 明确 Page 排序、恢复、dirty、拖动和解绑规则。
@@ -13,19 +13,19 @@ Page 模型定义 Harbor 的页面单位，以及 Page 与 Chrome Tab、Bookmark
 
 ### Temp Page
 
-Temp Page 是 Harbor 对当前打开 Chrome Tab 的临时表达。
+Temp Page 是 Mooring 对当前打开 Chrome Tab 的临时表达。
 
 特点：
 
 - 一定绑定一个 Chrome Tab。
 - 没有 bookmark。
-- 不写入 `Harbor Workspace` 书签树。
+- 不写入 `Mooring Workspace` 书签树。
 - 关闭 Chrome Tab 后消失。
 - 可以通过星标变成 Pinned Page。
 
 ### Pinned Page
 
-Pinned Page 是 Harbor 的长期 Page。
+Pinned Page 是 Mooring 的长期 Page。
 
 特点：
 
@@ -77,7 +77,7 @@ ID 规则：
 - Temp Page：`chrome-tab:<chromeTabId>`
 - Pinned Page：`bookmark:<bookmarkId>`
 
-Pinned Page 打开后仍然以 `bookmark:<bookmarkId>` 作为 Harbor identity，避免关闭/恢复后 identity 改变。
+Pinned Page 打开后仍然以 `bookmark:<bookmarkId>` 作为 Mooring identity，避免关闭/恢复后 identity 改变。
 
 ## Chrome Tab 映射
 
@@ -145,59 +145,49 @@ type PinnedPageBookmark = {
 4. 如果 Chrome Tab 仍打开，它变成 Temp Page。
 5. 不关闭 Chrome Tab。
 
-## 显示分区
+## 显示规则
 
-Workspace 内分为两个 Page 区域：
-
-- Pinned Page 区：永远在上方。
-- Temp Page 区：永远在下方。
+Workspace 内只有一条 Page 列表，Pinned Page 和 Temp Page 可以自由混排。
 
 规则：
 
-- Pinned Page 不进入 Temp Page 区。
-- Temp Page 不进入 Pinned Page 区。
-- Temp Page 只能通过星标变成 Pinned Page。
-- Pinned Page 取消固定后，如果仍有 Chrome Tab，则进入 Temp Page 区。
+- Pinned Page 通过星标和 bookmark 身份识别。
+- Temp Page 通过未星标状态识别。
+- Temp Page 可以通过星标变成 Pinned Page，并保留当前 UI 位置。
+- Pinned Page 取消固定后，如果仍有 Chrome Tab，则变成 Temp Page，并保留当前 UI 位置。
 
 ## 排序规则
 
-Harbor managed Page 顺序与 Chrome Tab index 脱钩。
+Mooring managed Page 顺序与 Chrome Tab index 脱钩。
 
-排序分为：
-
-- Pinned Page 顺序：来自 bookmark 顺序。
-- Temp Page 顺序：来自 Harbor runtime 内存顺序。
+- Workspace Page 顺序：来自 Mooring runtime 顺序，可混排 Pinned Page 和 Temp Page。
+- Pinned Page 长期相对顺序：同步到 bookmark 顺序。
 - Unmanaged Page 顺序：来自 Chrome Tab index。
 
 ### UI 顺序
 
-拖动时传递的是 Page 在当前分区里的 UI 位置。
+拖动时传递的是 Page 在 Workspace 当前列表里的 UI 位置。
 
 原因：
 
 - 关闭态 Pinned Page 没有 Chrome Tab index。
-- Pinned Page 和 Temp Page 分区不同。
-- Chrome Tab index 不代表 Harbor managed Page 顺序。
+- Pinned Page 和 Temp Page 可以混排。
+- Chrome Tab index 不代表 Mooring managed Page 顺序。
 
-### Pinned Page 顺序
+### Workspace Page 顺序
 
-- 来源是 bookmark 顺序。
+- 来源是 Mooring runtime 顺序。
+- Pinned Page 和 Temp Page 都可以在 Workspace 内自由排序。
 - 关闭态和打开态 Pinned Page 都可以排序。
-- 拖动 Pinned Page 只影响 Pinned 区，不能进入 Temp 区。
-- Pinned Page 可以拖到另一个 Workspace 的 Pinned 区。
+- Temp Page 可以和 Pinned Page 混排。
+- Pinned Page 可以拖到另一个 Workspace。
+- Pinned Page 只能在 Workspace 内或 Workspace 之间拖动，不能拖到 unmanaged。
 - 跨 Workspace 拖动时，移动对应 bookmark 到目标 Workspace 文件夹。
 - 跨 Workspace 后，该 Page 仍然是 Pinned Page，只是归属 Workspace 改为目标 Workspace。
 - 如果 Pinned Page 已绑定 Chrome Tab，只确保 Chrome Tab 位于目标 Workspace 对应 Chrome Group。
 - 不同步 Chrome Tab index。
 - 如果目标 Workspace 没有 Chrome Group，则用该 Chrome Tab 创建目标 Workspace 的 Chrome Group；关闭态 Pinned Page 跨 Workspace 移动时不创建 Chrome Tab 或 Chrome Group。
-
-### Temp Page 顺序
-
-- 来源是 Harbor runtime 内存顺序。
-- 只影响当前运行时。
-- 不写入 bookmark。
-- 不能拖入 Pinned 区。
-- 不同步 Chrome Tab index。
+- Pinned Page 的 bookmark 顺序只记录 Pinned Page 彼此之间的长期相对顺序。
 
 ## 恢复位置
 
@@ -210,10 +200,11 @@ Harbor managed Page 顺序与 Chrome Tab index 脱钩。
 
 ## 拖动入口
 
-- Page 只能从最左侧拖动柄拖动。
+- Page 整行都可以拖动。
+- 拖动时高亮 Page 之间的插入缝隙，drop 后插入到该缝隙对应的位置。
 - 标题点击用于打开 Page。
 - Pinned Page 标题旁编辑按钮用于修改 bookmark title。
-- 输入框、星标、关闭按钮不能触发拖动。
+- 输入框编辑时不能触发拖动。
 
 ## Unmanaged Page
 
@@ -225,7 +216,7 @@ Unmanaged 区域里的 Chrome Tab 可以显示为 unmanaged Temp Page。
 
 ## 不做的事
 
-- 不把 Harbor Page 简称为 Tab。
+- 不把 Mooring Page 简称为 Tab。
 - 不用 Chrome Tab ID 作为 Pinned Page identity。
 - 不把 `chrome.storage.session` 里的 Chrome Tab ID 当长期身份。
 - 不让关闭 Chrome Tab 删除 Pinned Page。

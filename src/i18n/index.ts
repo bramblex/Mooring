@@ -2,7 +2,7 @@ export type Locale = "en" | "zh";
 
 const messages = {
   en: {
-    appName: "Harbor",
+    appName: "Mooring",
     temporaryWindow: "Temporary window",
     temporaryWindowDescription:
       "Workspace lives in the main window. Send tabs there or open it.",
@@ -39,7 +39,7 @@ const messages = {
     ungroup: "Ungroup",
   },
   zh: {
-    appName: "Harbor",
+    appName: "Mooring",
     temporaryWindow: "临时窗口",
     temporaryWindowDescription: "Workspace 位于主窗口。你可以把标签页发送过去，或打开主窗口。",
     openMainWindow: "打开主窗口",

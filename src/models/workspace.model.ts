@@ -37,18 +37,20 @@ type WorkspaceFolder = ParsedWorkspaceTitle & {
   index: number;
 };
 
-const ROOT_FOLDER_TITLE = "Harbor Workspace";
+const ROOT_FOLDER_TITLE = "Mooring Workspace";
+const LEGACY_ROOT_FOLDER_TITLE = "Harbor Workspace";
 const DEFAULT_WORKSPACE_NAME = "Untitled workspace";
 const DEFAULT_WORKSPACE_COLOR: TabGroupColor = "grey";
 const NO_GROUP = chrome.tabGroups.TAB_GROUP_ID_NONE;
 const WORKSPACE_TITLE_RE = /^\[(grey|blue|red|yellow|green|pink|purple|cyan|orange)(?::(shown|hidden))?\]\s*(.*)$/;
 
 const BOOKMARK_BAR_ID = "1";
-const RUNTIME_BINDINGS_STORAGE_KEY = "harborRuntimeBindings";
+const RUNTIME_BINDINGS_STORAGE_KEY = "mooringRuntimeBindings";
 
 type RuntimeBindingsStorage = {
   workspaceGroupIds?: Array<[string, number]>;
   chromeTabBookmarkIds?: Array<[number, string]>;
+  workspacePageOrders?: Array<[string, string[]]>;
   workspaceTempPageOrders?: Array<[string, number[]]>;
 };
 
@@ -100,7 +102,7 @@ export class WorkspaceModel {
   private workspaceGroupIds = new Map<string, number>();
   private groupWorkspaceIds = new Map<number, string>();
   private chromeTabBookmarkIds = new Map<number, string>();
-  private workspaceTempPageOrders = new Map<string, number[]>();
+  private workspacePageOrders = new Map<string, string[]>();
   private runtimeBindingsLoaded = false;
   private shouldRebuildRuntimeBindings = false;
 
@@ -108,7 +110,7 @@ export class WorkspaceModel {
     this.workspaceGroupIds.clear();
     this.groupWorkspaceIds.clear();
     this.chromeTabBookmarkIds.clear();
-    this.workspaceTempPageOrders.clear();
+    this.workspacePageOrders.clear();
     this.runtimeBindingsLoaded = true;
     void this.persistRuntimeBindings();
     this.markRuntimeBindingsRebuildNeeded();
@@ -287,7 +289,7 @@ export class WorkspaceModel {
         // docs/mvp-checklist.md: 删除 Workspace 不关闭用户页面；
         // 已打开 Chrome Tabs 释放到 Unmanaged 区。
         await chrome.tabs.ungroup(tabIds as [number, ...number[]]);
-        tabIds.forEach((tabId) => this.removeTempPageOrder(tabId));
+        tabIds.forEach((tabId) => this.removeWorkspacePageOrder(`chrome-tab:${tabId}`));
       }
       this.groupWorkspaceIds.delete(groupId);
     }
@@ -308,7 +310,7 @@ export class WorkspaceModel {
       title: formatWorkspaceTitle(group.title || DEFAULT_WORKSPACE_NAME, group.color, group.collapsed),
     });
 
-    // docs/mvp-checklist.md: unmanaged Chrome Group 显式纳入 Harbor 时，
+    // docs/mvp-checklist.md: unmanaged Chrome Group 显式纳入 Mooring 时，
     // 只创建 Workspace folder 并绑定 Group；Group 内 Chrome Tabs 保持 Temp Page。
     this.bindWorkspace(folder.id, group.id);
   }
@@ -371,7 +373,7 @@ export class WorkspaceModel {
 
     await chrome.tabs.remove(chromeTabId);
     this.chromeTabBookmarkIds.delete(chromeTabId);
-    this.removeTempPageOrder(chromeTabId);
+    this.removeWorkspacePageOrder(`chrome-tab:${chromeTabId}`);
     void this.persistRuntimeBindings();
   }
 
@@ -412,6 +414,7 @@ export class WorkspaceModel {
       url: chromeTabUrl(tab),
     });
     this.chromeTabBookmarkIds.set(chromeTabId, bookmark.id);
+    this.replaceWorkspacePageOrder(workspaceId, `chrome-tab:${chromeTabId}`, `bookmark:${bookmark.id}`);
     void this.persistRuntimeBindings();
   }
 
@@ -426,6 +429,7 @@ export class WorkspaceModel {
 
     if (chromeTabId) {
       this.chromeTabBookmarkIds.delete(chromeTabId);
+      await this.appendTempPageOrderForTab(chromeTabId, `bookmark:${resolvedBookmarkId}`);
       void this.persistRuntimeBindings();
       return;
     }
@@ -433,7 +437,7 @@ export class WorkspaceModel {
     for (const [openTabId, openBookmarkId] of this.chromeTabBookmarkIds.entries()) {
       if (openBookmarkId === resolvedBookmarkId) {
         this.chromeTabBookmarkIds.delete(openTabId);
-        await this.appendTempPageOrderForTab(openTabId);
+        await this.appendTempPageOrderForTab(openTabId, `bookmark:${resolvedBookmarkId}`);
       }
     }
     void this.persistRuntimeBindings();
@@ -455,40 +459,41 @@ export class WorkspaceModel {
       || (parsedId.chromeTabId ? this.chromeTabBookmarkIds.get(parsedId.chromeTabId) : undefined);
     const openChromeTabId = parsedId.chromeTabId
       || (bookmarkId ? await this.findOpenChromeTabIdByBookmarkId(bookmarkId) : undefined);
+    const pageOrderId = bookmarkId ? `bookmark:${bookmarkId}` : pageId;
 
     if (!workspaceId) {
-      // docs/page-model.md: Pinned Page 不进入 Temp Page 区；
-      // 拖到 unmanaged 只对没有 Bookmark 的 Temp Page 生效。
+      // docs/page-model.md: Pinned Page 拖到 unmanaged 不删除 bookmark；
+      // unmanaged 只接收没有 Bookmark 的 Temp Page。
       if (bookmarkId) return;
       if (!openChromeTabId) return;
 
       const moveIndex = await this.ungroupedChromeIndex(windowId, openChromeTabId, index);
-      this.removeTempPageOrder(openChromeTabId);
+      this.removeWorkspacePageOrder(pageOrderId);
       await chrome.tabs.move(openChromeTabId, { windowId, index: moveIndex });
       await chrome.tabs.ungroup(openChromeTabId);
       return;
     }
 
     if (bookmarkId) {
-      // docs/page-model.md: Pinned Page 跨 Workspace 拖动时移动 Bookmark，
-      // 移动后仍然是目标 Workspace 的 Pinned Page。
+      // docs/page-model.md: Pinned Page 在 Workspace 内和跨 Workspace 都可以自由排序；
+      // Bookmark 只同步 Pinned Page 彼此之间的长期相对顺序。
       await chrome.bookmarks.move(bookmarkId, {
         parentId: workspaceId,
-        index: await this.pinnedBookmarkIndexForDisplayIndex(workspaceId, bookmarkId, index),
+        index: await this.pinnedBookmarkIndexForDisplayIndex(workspaceId, bookmarkId, pageOrderId, index),
       });
     }
+
+    this.moveWorkspacePageOrder(workspaceId, pageOrderId, index);
 
     if (!openChromeTabId) return;
 
     const groupId = await this.ensureWorkspaceGroup(workspaceId, openChromeTabId);
 
-    // docs/产品逻辑文档.md: Harbor managed Page 顺序与 Chrome Tab index 脱钩；
+    // docs/product-logic.md: Mooring managed Page 顺序与 Chrome Tab index 脱钩；
     // 这里只确保 Chrome Tab 进入目标 Workspace 的 Chrome Group。
     await chrome.tabs.group({ tabIds: openChromeTabId, groupId });
 
-    if (!bookmarkId) {
-      await this.moveTempPageOrder(workspaceId, openChromeTabId, index);
-    }
+    void this.persistRuntimeBindings();
   }
 
   async moveWorkspace(sourceWorkspaceId: string, targetWorkspaceId: string) {
@@ -509,6 +514,11 @@ export class WorkspaceModel {
     const [root] = await chrome.bookmarks.search({ title: ROOT_FOLDER_TITLE });
     if (root && !root.url) return root;
 
+    // Product rename: keep reading the old root so existing local users do not
+    // lose their bookmark-backed workspaces after upgrading from Harbor.
+    const [legacyRoot] = await chrome.bookmarks.search({ title: LEGACY_ROOT_FOLDER_TITLE });
+    if (legacyRoot && !legacyRoot.url) return legacyRoot;
+
     try {
       return await chrome.bookmarks.create({
         parentId: BOOKMARK_BAR_ID,
@@ -524,7 +534,7 @@ export class WorkspaceModel {
   private async ensureRuntimeBindingsLoaded() {
     if (this.runtimeBindingsLoaded) return;
 
-    // docs/产品逻辑文档.md: Runtime Binding 可以用 chrome.storage.session
+    // docs/product-logic.md: Runtime Binding 可以用 chrome.storage.session
     // 跨 service worker 唤醒恢复，但读取后仍需在扫描时验证是否有效。
     const stored = await chrome.storage.session.get(RUNTIME_BINDINGS_STORAGE_KEY);
     const bindings = stored[RUNTIME_BINDINGS_STORAGE_KEY] as RuntimeBindingsStorage | undefined;
@@ -534,7 +544,12 @@ export class WorkspaceModel {
       [...this.workspaceGroupIds.entries()].map(([workspaceId, groupId]) => [groupId, workspaceId]),
     );
     this.chromeTabBookmarkIds = new Map(bindings?.chromeTabBookmarkIds || []);
-    this.workspaceTempPageOrders = new Map(bindings?.workspaceTempPageOrders || []);
+    const pageOrders = bindings?.workspacePageOrders
+      || bindings?.workspaceTempPageOrders?.map(
+        ([workspaceId, tabIds]) => [workspaceId, tabIds.map((tabId) => `chrome-tab:${tabId}`)] as [string, string[]],
+      )
+      || [];
+    this.workspacePageOrders = new Map(pageOrders);
     this.runtimeBindingsLoaded = true;
   }
 
@@ -544,7 +559,7 @@ export class WorkspaceModel {
     const bindings: RuntimeBindingsStorage = {
       workspaceGroupIds: [...this.workspaceGroupIds.entries()],
       chromeTabBookmarkIds: [...this.chromeTabBookmarkIds.entries()],
-      workspaceTempPageOrders: [...this.workspaceTempPageOrders.entries()],
+      workspacePageOrders: [...this.workspacePageOrders.entries()],
     };
 
     await chrome.storage.session.set({
@@ -576,7 +591,7 @@ export class WorkspaceModel {
     this.workspaceGroupIds.clear();
     this.groupWorkspaceIds.clear();
     this.chromeTabBookmarkIds.clear();
-    this.workspaceTempPageOrders.clear();
+    this.workspacePageOrders.clear();
     void this.persistRuntimeBindings();
   }
 
@@ -620,7 +635,7 @@ export class WorkspaceModel {
         const tabIds = tabs.flatMap((tab) => (tab.id ? [tab.id] : []));
         if (tabIds.length === 0) continue;
 
-        // docs/产品逻辑文档.md: Chrome 创建或恢复的 Group 匹配已打开 Workspace 时，
+        // docs/product-logic.md: Chrome 创建或恢复的 Group 匹配已打开 Workspace 时，
         // 把该 Chrome Group 内 Chrome Tabs 合并进 Workspace 已绑定的 Chrome Group。
         await chrome.tabs.group({
           tabIds: tabIds as [number, ...number[]],
@@ -704,25 +719,20 @@ export class WorkspaceModel {
       return this.pinnedPageModel(bookmark, tab, index);
     });
 
-    const tempTabs = openTabs.filter((tab) => tab.id && !usedTabIds.has(tab.id));
-    const tempOrder = this.reconcileTempPageOrder(
-      workspaceId,
-      tempTabs.flatMap((tab) => (tab.id ? [tab.id] : [])),
-    );
-    const tempPages = tempTabs
-      .sort((a, b) => {
-        const aOrder = a.id ? tempOrder.indexOf(a.id) : -1;
-        const bOrder = b.id ? tempOrder.indexOf(b.id) : -1;
-        return (aOrder >= 0 ? aOrder : a.index) - (bOrder >= 0 ? bOrder : b.index);
-      })
-      .map((tab, index) => ({
-        ...this.tempPageModel(tab, false),
-        order: bookmarks.length + index,
-      }));
+    const tempPages = openTabs
+      .filter((tab) => tab.id && !usedTabIds.has(tab.id))
+      .map((tab) => this.tempPageModel(tab, false));
+    const pages = [...pinnedTabs, ...tempPages];
+    const order = this.reconcileWorkspacePageOrder(workspaceId, pages.map((page) => page.id));
 
-    // docs/page-model.md: Pinned Page 永远在 Workspace 上半区，
-    // Temp Page 永远在 Workspace 下半区；Temp Page 顺序来自 Harbor runtime 内存顺序。
-    return [...pinnedTabs, ...tempPages];
+    // docs/page-model.md: Workspace 内 Page 可以自由混排；
+    // Mooring managed 顺序来自自己的 runtime order，不跟 Chrome Tab index 绑定。
+    return pages
+      .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
+      .map((page, index) => ({
+        ...page,
+        order: index,
+      }));
   }
 
   private pinnedPageModel(
@@ -862,6 +872,7 @@ export class WorkspaceModel {
   private async pinnedBookmarkIndexForDisplayIndex(
     workspaceId: string,
     movingBookmarkId: string,
+    movingPageId: string,
     displayIndex: number,
   ) {
     const bookmarks = (await chrome.bookmarks.getChildren(workspaceId))
@@ -870,40 +881,30 @@ export class WorkspaceModel {
     const filteredBookmarks = bookmarks.filter((node) => node.id !== movingBookmarkId);
     if (displayIndex < 0) return filteredBookmarks.length;
 
-    return Math.min(displayIndex, filteredBookmarks.length);
+    const currentOrder = this.workspacePageOrders.get(workspaceId) || bookmarks.map((node) => `bookmark:${node.id}`);
+    const nextOrder = currentOrder.filter((id) => id !== movingPageId);
+    const previousIndex = currentOrder.indexOf(movingPageId);
+    const adjustedDisplayIndex = previousIndex >= 0 && previousIndex < displayIndex
+      ? displayIndex - 1
+      : displayIndex;
+    nextOrder.splice(Math.min(adjustedDisplayIndex, nextOrder.length), 0, movingPageId);
+
+    const bookmarkIdsBeforeTarget = nextOrder
+      .slice(0, nextOrder.indexOf(movingPageId))
+      .filter((id) => id.startsWith("bookmark:"))
+      .length;
+    return Math.min(bookmarkIdsBeforeTarget, filteredBookmarks.length);
   }
 
-  private async moveTempPageOrder(workspaceId: string, chromeTabId: number, displayIndex: number) {
-    this.removeTempPageOrder(chromeTabId, false);
-
-    const bookmarks = (await chrome.bookmarks.getChildren(workspaceId)).filter((node) => node.url);
-    const targetTempIndex = displayIndex < 0
-      ? Number.POSITIVE_INFINITY
-      : Math.max(0, displayIndex - bookmarks.length);
-    const groupId = await this.validWorkspaceGroupId(workspaceId);
-    const groupTabs = groupId === undefined ? [] : await chrome.tabs.query({ groupId });
-    const tempTabIds = groupTabs
-      .flatMap((tab) => (tab.id && !this.chromeTabBookmarkIds.get(tab.id) ? [tab.id] : []));
-    if (!tempTabIds.includes(chromeTabId)) {
-      tempTabIds.push(chromeTabId);
-    }
-    const order = this.reconcileTempPageOrder(workspaceId, tempTabIds)
-      .filter((id) => id !== chromeTabId);
-
-    order.splice(Math.min(targetTempIndex, order.length), 0, chromeTabId);
-    this.workspaceTempPageOrders.set(workspaceId, order);
-    void this.persistRuntimeBindings();
-  }
-
-  private reconcileTempPageOrder(
+  private reconcileWorkspacePageOrder(
     workspaceId: string,
-    chromeTabIds: number[],
+    pageIds: string[],
   ) {
-    const validIds = new Set(chromeTabIds);
-    const previousOrder = this.workspaceTempPageOrders.get(workspaceId) || [];
+    const validIds = new Set(pageIds);
+    const previousOrder = this.workspacePageOrders.get(workspaceId) || [];
     const nextOrder = previousOrder.filter((id) => validIds.has(id));
 
-    chromeTabIds.forEach((id) => {
+    pageIds.forEach((id) => {
       if (!nextOrder.includes(id)) {
         nextOrder.push(id);
       }
@@ -912,37 +913,71 @@ export class WorkspaceModel {
     const changed = previousOrder.length !== nextOrder.length
       || previousOrder.some((id, index) => id !== nextOrder[index]);
     if (changed) {
-      this.workspaceTempPageOrders.set(workspaceId, nextOrder);
+      this.workspacePageOrders.set(workspaceId, nextOrder);
       void this.persistRuntimeBindings();
     }
     return nextOrder;
   }
 
-  private async appendTempPageOrderForTab(chromeTabId: number) {
+  private moveWorkspacePageOrder(workspaceId: string, pageId: string, displayIndex: number) {
+    const currentOrder = this.workspacePageOrders.get(workspaceId) || [];
+    const previousIndex = currentOrder.indexOf(pageId);
+    const adjustedDisplayIndex = previousIndex >= 0 && previousIndex < displayIndex
+      ? displayIndex - 1
+      : displayIndex;
+
+    this.removeWorkspacePageOrder(pageId, false);
+
+    const order = (this.workspacePageOrders.get(workspaceId) || []).filter((id) => id !== pageId);
+    order.splice(
+      adjustedDisplayIndex < 0 ? order.length : Math.min(adjustedDisplayIndex, order.length),
+      0,
+      pageId,
+    );
+    this.workspacePageOrders.set(workspaceId, order);
+    void this.persistRuntimeBindings();
+  }
+
+  private replaceWorkspacePageOrder(workspaceId: string, previousPageId: string, nextPageId: string) {
+    const order = this.workspacePageOrders.get(workspaceId) || [];
+    const previousIndex = order.indexOf(previousPageId);
+    const nextOrder = order.filter((id) => id !== previousPageId && id !== nextPageId);
+    nextOrder.splice(previousIndex >= 0 ? previousIndex : nextOrder.length, 0, nextPageId);
+    this.workspacePageOrders.set(workspaceId, nextOrder);
+    void this.persistRuntimeBindings();
+  }
+
+  private async appendTempPageOrderForTab(chromeTabId: number, previousPageId?: string) {
     // docs/page-model.md: Pinned Page 取消固定后，如果 Chrome Tab 仍打开，
-    // 它变成 Temp Page；Temp Page 顺序进入 Harbor runtime 内存顺序末尾。
+    // 它变成 Temp Page；Page 顺序进入 Workspace runtime 顺序末尾。
     const tab = await chrome.tabs.get(chromeTabId).catch(() => undefined);
     if (!tab) return;
 
     const workspaceId = this.groupWorkspaceIds.get(tab.groupId);
     if (!workspaceId) return;
 
-    const order = this.workspaceTempPageOrders.get(workspaceId) || [];
-    if (!order.includes(chromeTabId)) {
-      this.workspaceTempPageOrders.set(workspaceId, [...order, chromeTabId]);
+    const pageId = `chrome-tab:${chromeTabId}`;
+    if (previousPageId) {
+      this.replaceWorkspacePageOrder(workspaceId, previousPageId, pageId);
+      return;
+    }
+
+    const order = this.workspacePageOrders.get(workspaceId) || [];
+    if (!order.includes(pageId)) {
+      this.workspacePageOrders.set(workspaceId, [...order, pageId]);
       void this.persistRuntimeBindings();
     }
   }
 
-  private removeTempPageOrder(chromeTabId: number, persist = true) {
+  private removeWorkspacePageOrder(pageId: string, persist = true) {
     let changed = false;
 
-    for (const [workspaceId, order] of this.workspaceTempPageOrders.entries()) {
-      const nextOrder = order.filter((id) => id !== chromeTabId);
+    for (const [workspaceId, order] of this.workspacePageOrders.entries()) {
+      const nextOrder = order.filter((id) => id !== pageId);
       if (nextOrder.length !== order.length) {
         changed = true;
       }
-      this.workspaceTempPageOrders.set(workspaceId, nextOrder);
+      this.workspacePageOrders.set(workspaceId, nextOrder);
     }
 
     if (changed && persist) {

@@ -1,21 +1,21 @@
 # Workspace 模型
 
-Workspace 模型定义 Harbor 的长期工作区结构，以及它和 Chrome Group 的运行时映射。完整产品规则以 [产品逻辑文档](./产品逻辑文档.md) 为准。
+Workspace 模型定义 Mooring 的长期工作区结构，以及它和 Chrome Group 的运行时映射。完整产品规则以 [产品逻辑文档](./product-logic.md) 为准。
 
 ## 目标
 
 - Workspace 长期结构可同步、可恢复。
 - Workspace 身份不依赖 Chrome 会话级 ID。
-- Workspace 只管理 Harbor Page，不直接拥有 Chrome Tab。
+- Workspace 只管理 Mooring Page，不直接拥有 Chrome Tab。
 - Chrome Group 只是 Workspace 在主窗口里的运行时投影。
 - Workspace 排序有明确的长期来源。
 
 ## 长期结构
 
-Harbor 使用 Chrome 书签树保存 Workspace 静态结构。
+Mooring 使用 Chrome 书签树保存 Workspace 静态结构。
 
 ```text
-Harbor Workspace
+Mooring Workspace
   [blue] Work
     GitHub
     Gmail
@@ -25,7 +25,7 @@ Harbor Workspace
 
 规则：
 
-- 根目录固定为 `Harbor Workspace`。
+- 根目录固定为 `Mooring Workspace`。
 - 每个 Workspace 是根目录下的一个书签文件夹。
 - Workspace ID 使用书签文件夹 ID。
 - Workspace 顺序使用根目录下文件夹顺序。
@@ -106,13 +106,13 @@ type RuntimeWorkspaceBinding = {
 
 - 对应 Chrome Group 可以不存在。
 - Workspace 仍然存在于书签树。
-- 点击关闭态 Pinned Page 时，Harbor 用新创建的 Chrome Tab 创建对应 Chrome Group。
+- 点击关闭态 Pinned Page 时，Mooring 用新创建的 Chrome Tab 创建对应 Chrome Group。
 
 ## 创建与空 Workspace
 
 创建空 Workspace 时：
 
-1. 在 `Harbor Workspace` 根目录下创建 Workspace 文件夹。
+1. 在 `Mooring Workspace` 根目录下创建 Workspace 文件夹。
 2. 文件夹 title 使用 `[color] name` 格式。
 3. 不立即创建 Chrome Group。
 4. 不立即创建 Chrome Tab。
@@ -125,9 +125,9 @@ type RuntimeWorkspaceBinding = {
 
 ## Chrome 创建或恢复的 Group
 
-Chrome 手动创建或 session restore 出来的 Chrome Group 不是 Harbor 长期状态来源。
+Chrome 手动创建或 session restore 出来的 Chrome Group 不是 Mooring 长期状态来源。
 
-Harbor 在扫描主窗口时按名称和颜色尝试匹配 Workspace：
+Mooring 在扫描主窗口时按名称和颜色尝试匹配 Workspace：
 
 - 匹配且 Workspace 未打开：绑定该 Chrome Group。
 - 匹配且 Workspace 已打开：把该 Chrome Group 内 Chrome Tab 合并进已绑定 Workspace 的 Chrome Group。
@@ -188,20 +188,20 @@ Harbor 在扫描主窗口时按名称和颜色尝试匹配 Workspace：
 
 ## Workspace 排序
 
-Workspace 的长期排序来源是 `Harbor Workspace` 根目录下的文件夹顺序。
+Workspace 的长期排序来源是 `Mooring Workspace` 根目录下的文件夹顺序。
 
-Harbor managed 的 Workspace 顺序与 Chrome Group 顺序脱钩。
+Mooring managed 的 Workspace 顺序与 Chrome Group 顺序脱钩。
 
 拖动 Workspace 时：
 
 1. 移动 Workspace 书签文件夹。
 2. 不移动 Chrome Group。
-3. 刷新 Harbor runtime 绑定。
+3. 刷新 Mooring runtime 绑定。
 
 Chrome Group 排序只是运行时投影：
 
 - 不能作为 Workspace 长期顺序来源。
-- 不需要与 Harbor managed 侧边栏顺序一致。
+- 不需要与 Mooring managed 侧边栏顺序一致。
 - 下次恢复时仍以书签文件夹顺序为准。
 
 ## 与 Page 的关系
@@ -223,8 +223,8 @@ Workspace 只负责容器身份和 Workspace 顺序：
 规则：
 
 - Unmanaged 区不写 Bookmark。
-- Unmanaged 区不改变 Harbor managed 排序。
-- Harbor 管理区排在 unmanaged 区前面。
+- Unmanaged 区不改变 Mooring managed 排序。
+- Mooring 管理区排在 unmanaged 区前面。
 - unmanaged Chrome Tab 可以被移动到 Workspace，成为该 Workspace 的 Temp Page。
 - unmanaged Chrome Group 可以按匹配规则绑定或合并进 Workspace。
 - Unmanaged 区排序跟随 Chrome 当前 Window / Group / Tab 顺序。
@@ -234,5 +234,5 @@ Workspace 只负责容器身份和 Workspace 顺序：
 - 不把 Workspace 列表存入 `chrome.storage.local`。
 - 不把 Chrome Group ID 写成长期数据。
 - 不把 `chrome.storage.session` 当作长期数据来源。
-- 不让 Chrome session restore 覆盖 `Harbor Workspace` 书签结构。
-- 不把 Harbor Page 简称为 Tab。
+- 不让 Chrome session restore 覆盖 `Mooring Workspace` 书签结构。
+- 不把 Mooring Page 简称为 Tab。

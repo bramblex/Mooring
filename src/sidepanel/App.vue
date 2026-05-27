@@ -88,6 +88,7 @@ const workspaceState = ref<WorkspaceState>({
   unmanagedGroups: [],
 });
 const draggedPageId = ref<string | null>(null);
+const draggedPagePinned = ref(false);
 const draggedWorkspaceId = ref<string | null>(null);
 const dragOverKey = ref("");
 const openColorPickerGroupId = ref<string | null>(null);
@@ -101,6 +102,11 @@ const isWindowContextReady = computed(() => Boolean(windowContext.value));
 const workspaces = computed(() =>
   [...workspaceState.value.workspaces].sort((a, b) => a.order - b.order),
 );
+const allPages = computed(() => [
+  ...workspaceState.value.unmanagedPages,
+  ...workspaceState.value.unmanagedGroups.flatMap((group) => group.pages),
+  ...workspaceState.value.workspaces.flatMap((workspace) => workspace.pages),
+]);
 
 function pageTitle(page: PageModel) {
   return page.title || page.url || t("untitledPage");
@@ -108,6 +114,12 @@ function pageTitle(page: PageModel) {
 
 function pageSubtitle(page: PageModel) {
   return page.dirty ? page.currentTitle || page.url || "" : "";
+}
+
+function findPage(pageId: string | null) {
+  if (!pageId) return undefined;
+
+  return allPages.value.find((page) => page.id === pageId);
 }
 
 function pageFavicon(page: PageModel) {
@@ -318,6 +330,7 @@ function onPageDragStart(page: PageModel, event: DragEvent) {
   if (!event.dataTransfer) return;
 
   draggedPageId.value = page.id;
+  draggedPagePinned.value = page.pinned;
   draggedWorkspaceId.value = null;
   event.dataTransfer.effectAllowed = "move";
   event.dataTransfer.setData("text/plain", page.id);
@@ -338,10 +351,68 @@ function onDragOver(key: string, event: DragEvent) {
   dragOverKey.value = key;
 }
 
-function onPageDragOver(key: string, event: DragEvent) {
-  if (draggedWorkspaceId.value !== null) return;
+function pageGapKey(workspaceId: string | null, index: number) {
+  return `page-gap-${workspaceId || "unmanaged"}-${index}`;
+}
 
-  onDragOver(key, event);
+function canDropPageInto(workspaceId: string | null) {
+  if (draggedPageId.value === null || draggedWorkspaceId.value !== null) return false;
+
+  // docs/page-model.md: Pinned Page 只能在 Workspace 之间移动；
+  // 没有 bookmark 身份的 Temp Page 才能回到 unmanaged。
+  return workspaceId !== null || !draggedPagePinned.value;
+}
+
+function isNoopPageDrop(workspaceId: string | null, index: number) {
+  const draggedPage = findPage(draggedPageId.value);
+  if (!draggedPage) return false;
+
+  const currentIndex = workspaceId
+    ? workspaceState.value.workspaces.find((workspace) => workspace.id === workspaceId)
+      ?.pages.findIndex((page) => page.id === draggedPage.id)
+    : workspaceState.value.unmanagedPages.findIndex((page) => page.id === draggedPage.id);
+
+  return currentIndex !== undefined
+    && currentIndex >= 0
+    && (index === currentIndex || index === currentIndex + 1);
+}
+
+function canDropPageAt(workspaceId: string | null, index: number) {
+  return canDropPageInto(workspaceId) && !isNoopPageDrop(workspaceId, index);
+}
+
+function onPageGapDragOver(workspaceId: string | null, index: number, event: DragEvent) {
+  if (!canDropPageAt(workspaceId, index)) {
+    dragOverKey.value = "";
+    return;
+  }
+
+  onDragOver(pageGapKey(workspaceId, index), event);
+}
+
+function pageDropIndexFromEvent(targetIndex: number, event: DragEvent) {
+  const target = event.currentTarget as HTMLElement;
+  const rect = target.getBoundingClientRect();
+  const shouldInsertAfter = event.clientY > rect.top + rect.height / 2;
+
+  return shouldInsertAfter ? targetIndex + 1 : targetIndex;
+}
+
+function onPageItemDragOver(workspaceId: string | null, targetIndex: number, event: DragEvent) {
+  const index = pageDropIndexFromEvent(targetIndex, event);
+  if (!canDropPageAt(workspaceId, index)) {
+    dragOverKey.value = "";
+    return;
+  }
+
+  onDragOver(pageGapKey(workspaceId, index), event);
+}
+
+async function onPageItemDrop(workspaceId: string | null, targetIndex: number, event: DragEvent) {
+  const index = pageDropIndexFromEvent(targetIndex, event);
+  if (!canDropPageAt(workspaceId, index)) return;
+
+  await onDrop(workspaceId, index, event);
 }
 
 function onDragLeave(key: string) {
@@ -367,18 +438,10 @@ async function onDrop(workspaceId: string | null, index: number, event: DragEven
   await refreshTabs();
 }
 
-function getTabDropIndex(targetIndex: number, event: DragEvent) {
-  const target = event.currentTarget as HTMLElement;
-  const rect = target.getBoundingClientRect();
-  const shouldInsertAfter = event.clientY > rect.top + rect.height / 2;
+async function onPageGapDrop(workspaceId: string | null, index: number, event: DragEvent) {
+  if (!canDropPageInto(workspaceId)) return;
 
-  return shouldInsertAfter ? targetIndex + 1 : targetIndex;
-}
-
-async function onPageDrop(workspaceId: string | null, targetIndex: number, event: DragEvent) {
-  if (draggedWorkspaceId.value !== null) return;
-
-  await onDrop(workspaceId, getTabDropIndex(targetIndex, event), event);
+  await onDrop(workspaceId, index, event);
 }
 
 async function onWorkspaceDrop(targetWorkspace: WorkspaceView, event: DragEvent) {
@@ -396,8 +459,25 @@ async function onWorkspaceDrop(targetWorkspace: WorkspaceView, event: DragEvent)
   await refreshTabs();
 }
 
+function onWorkspaceSectionDragOver(workspace: WorkspaceView, event: DragEvent) {
+  if (draggedWorkspaceId.value === null) return;
+
+  onDragOver(`workspace-${workspace.id}`, event);
+}
+
+async function onWorkspaceSectionDrop(workspace: WorkspaceView, event: DragEvent) {
+  if (draggedWorkspaceId.value === null) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+
+  await onWorkspaceDrop(workspace, event);
+}
+
 function onDragEnd() {
   draggedPageId.value = null;
+  draggedPagePinned.value = false;
   draggedWorkspaceId.value = null;
   dragOverKey.value = "";
 }
@@ -409,6 +489,10 @@ function toggleColorPicker(groupId: string) {
 function stopInputDrag(event: DragEvent) {
   event.preventDefault();
   event.stopPropagation();
+}
+
+function isEditingPage(page: PageModel) {
+  return Boolean(page.bookmarkId && editingBookmarkId.value === page.bookmarkId);
 }
 
 onMounted(async () => {
@@ -525,7 +609,7 @@ onMounted(async () => {
     </header>
 
     <section class="groups" :aria-label="t('openTabs')">
-      <!-- docs/产品逻辑文档.md: Harbor 管理的 Workspace 区域排在 Unmanaged 区域前面。 -->
+      <!-- docs/product-logic.md: Mooring 管理的 Workspace 区域排在 Unmanaged 区域前面。 -->
       <section
         v-for="workspace in workspaces"
         :key="workspace.id"
@@ -535,9 +619,9 @@ onMounted(async () => {
           'drag-over': dragOverKey === `workspace-${workspace.id}`,
         }"
         :style="groupColorStyle(workspace.color)"
-        @dragover="onDragOver(`workspace-${workspace.id}`, $event)"
+        @dragover="onWorkspaceSectionDragOver(workspace, $event)"
         @dragleave="onDragLeave(`workspace-${workspace.id}`)"
-        @drop="draggedWorkspaceId === null ? onDrop(workspace.id, -1, $event) : onWorkspaceDrop(workspace, $event)"
+        @drop="onWorkspaceSectionDrop(workspace, $event)"
       >
         <div class="group-header">
           <span
@@ -612,31 +696,28 @@ onMounted(async () => {
         </div>
 
         <ol v-if="!workspace.collapsed" class="tabs">
-          <li
-            v-for="(page, pageIndex) in workspace.pages"
-            :key="page.id"
-            class="tab"
-            :class="{
-              active: page.active,
-              dragging: draggedPageId === page.id,
-              'drag-over': dragOverKey === `page-${page.id}`,
-              'closed-tab': !page.open,
-            }"
-            @dragover="onPageDragOver(`page-${page.id}`, $event)"
-            @dragleave="onDragLeave(`page-${page.id}`)"
-            @drop="onPageDrop(workspace.id, pageIndex, $event)"
-            @dragend="onDragEnd"
-          >
-            <span
-              class="drag-handle"
-              draggable="true"
-              :title="t('dragPage')"
-              :aria-label="t('dragPage')"
+          <template v-for="(page, pageIndex) in workspace.pages" :key="page.id">
+            <li
+              class="tab-drop-gap"
+              :class="{ active: dragOverKey === pageGapKey(workspace.id, pageIndex) }"
+              @dragover="onPageGapDragOver(workspace.id, pageIndex, $event)"
+              @dragleave="onDragLeave(pageGapKey(workspace.id, pageIndex))"
+              @drop="onPageGapDrop(workspace.id, pageIndex, $event)"
+            ></li>
+            <li
+              class="tab"
+              :class="{
+                active: page.active,
+                dragging: draggedPageId === page.id,
+                'closed-tab': !page.open,
+                'pinned-tab': page.pinned,
+              }"
+              :draggable="!isEditingPage(page)"
+              @dragover="onPageItemDragOver(workspace.id, pageIndex, $event)"
+              @drop="onPageItemDrop(workspace.id, pageIndex, $event)"
               @dragstart="onPageDragStart(page, $event)"
               @dragend="onDragEnd"
             >
-              <GripVertical :size="16" />
-            </span>
             <button
               class="tab-favicon"
               type="button"
@@ -728,47 +809,47 @@ onMounted(async () => {
                 <X :size="16" aria-hidden="true" />
               </button>
             </div>
-          </li>
+            </li>
+          </template>
+          <li
+            class="tab-drop-gap"
+            :class="{ active: dragOverKey === pageGapKey(workspace.id, workspace.pages.length) }"
+            @dragover="onPageGapDragOver(workspace.id, workspace.pages.length, $event)"
+            @dragleave="onDragLeave(pageGapKey(workspace.id, workspace.pages.length))"
+            @drop="onPageGapDrop(workspace.id, workspace.pages.length, $event)"
+          ></li>
         </ol>
       </section>
 
-      <!-- docs/产品逻辑文档.md: Unmanaged 区域显示未被 Harbor 管理的 Chrome Tab 或 Chrome Group。 -->
+      <!-- docs/product-logic.md: Unmanaged 区域显示未被 Mooring 管理的 Chrome Tab 或 Chrome Group。 -->
       <section
         class="group-section ungrouped"
-        :class="{ 'drag-over': dragOverKey === 'workspace-unmanaged' }"
-        @dragover="onDragOver('workspace-unmanaged', $event)"
-        @dragleave="onDragLeave('workspace-unmanaged')"
-        @drop="onDrop(null, -1, $event)"
       >
         <div class="group-header">
           <h2>{{ t("unmanaged") }}</h2>
         </div>
 
         <ol class="tabs">
-          <li
-            v-for="(page, pageIndex) in workspaceState.unmanagedPages"
-            :key="page.id"
-            class="tab"
-            :class="{
-              active: page.active,
-              dragging: draggedPageId === page.id,
-              'drag-over': dragOverKey === `page-${page.id}`,
-            }"
-            @dragover="onPageDragOver(`page-${page.id}`, $event)"
-            @dragleave="onDragLeave(`page-${page.id}`)"
-            @drop="onPageDrop(null, pageIndex, $event)"
-            @dragend="onDragEnd"
-          >
-            <span
-              class="drag-handle"
+          <template v-for="(page, pageIndex) in workspaceState.unmanagedPages" :key="page.id">
+            <li
+              class="tab-drop-gap"
+              :class="{ active: dragOverKey === pageGapKey(null, pageIndex) }"
+              @dragover="onPageGapDragOver(null, pageIndex, $event)"
+              @dragleave="onDragLeave(pageGapKey(null, pageIndex))"
+              @drop="onPageGapDrop(null, pageIndex, $event)"
+            ></li>
+            <li
+              class="tab"
+              :class="{
+                active: page.active,
+                dragging: draggedPageId === page.id,
+              }"
               draggable="true"
-              :title="t('dragPage')"
-              :aria-label="t('dragPage')"
+              @dragover="onPageItemDragOver(null, pageIndex, $event)"
+              @drop="onPageItemDrop(null, pageIndex, $event)"
               @dragstart="onPageDragStart(page, $event)"
               @dragend="onDragEnd"
             >
-              <GripVertical :size="16" />
-            </span>
             <span class="tab-favicon" aria-hidden="true">
               <img v-if="pageFavicon(page)" :src="pageFavicon(page)" alt="">
               <File v-else :size="16" />
@@ -792,7 +873,15 @@ onMounted(async () => {
                 <X :size="16" aria-hidden="true" />
               </button>
             </div>
-          </li>
+            </li>
+          </template>
+          <li
+            class="tab-drop-gap"
+            :class="{ active: dragOverKey === pageGapKey(null, workspaceState.unmanagedPages.length) }"
+            @dragover="onPageGapDragOver(null, workspaceState.unmanagedPages.length, $event)"
+            @dragleave="onDragLeave(pageGapKey(null, workspaceState.unmanagedPages.length))"
+            @drop="onPageGapDrop(null, workspaceState.unmanagedPages.length, $event)"
+          ></li>
         </ol>
 
         <section
@@ -823,18 +912,10 @@ onMounted(async () => {
                 active: page.active,
                 dragging: draggedPageId === page.id,
               }"
+              draggable="true"
+              @dragstart="onPageDragStart(page, $event)"
               @dragend="onDragEnd"
             >
-              <span
-                class="drag-handle"
-                draggable="true"
-                :title="t('dragPage')"
-                :aria-label="t('dragPage')"
-                @dragstart="onPageDragStart(page, $event)"
-                @dragend="onDragEnd"
-              >
-                <GripVertical :size="16" />
-              </span>
               <span class="tab-favicon" aria-hidden="true">
                 <img v-if="pageFavicon(page)" :src="pageFavicon(page)" alt="">
                 <File v-else :size="16" />

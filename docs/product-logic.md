@@ -1,6 +1,6 @@
-# Harbor 产品逻辑文档
+# Mooring 产品逻辑文档
 
-本文档是 Harbor 的产品规则源头。拆分模型文档负责展开具体结构：
+本文档是 Mooring 的产品规则源头。拆分模型文档负责展开具体结构：
 
 - [Window 模型](./window-model.md)
 - [Workspace 模型](./workspace-model.md)
@@ -11,28 +11,28 @@
 - `Window`：Chrome Window。
 - `Chrome Tab`：Chrome 真实打开的浏览器标签页。
 - `Chrome Group`：Chrome 原生标签组。
-- `Workspace`：Harbor 管理的工作区，对应 `Harbor Workspace` 根目录下的一个书签文件夹。
-- `Page`：Harbor 管理的基本页面单位。
+- `Workspace`：Mooring 管理的工作区，对应 `Mooring Workspace` 根目录下的一个书签文件夹。
+- `Page`：Mooring 管理的基本页面单位。
 - `Pinned Page`：长期存在于 Workspace 的 Page，对应一个 bookmark；可以绑定 Chrome Tab，也可以处于关闭态。
 - `Temp Page`：临时 Page，一定绑定一个 Chrome Tab，不写入 bookmark。
 - `Bookmark`：Chrome bookmark，用于保存 Pinned Page。
-- `Runtime Binding`：Harbor 运行时维护的 Workspace / Page 与 Chrome Group / Chrome Tab 的绑定关系。
-- `Unmanaged`：当前主窗口里不属于 Harbor Workspace 的 Chrome Tab 或 Chrome Group。
+- `Runtime Binding`：Mooring 运行时维护的 Workspace / Page 与 Chrome Group / Chrome Tab 的绑定关系。
+- `Unmanaged`：当前主窗口里不属于 Mooring Workspace 的 Chrome Tab 或 Chrome Group。
 
-产品文档中不使用 `Tab` 指代 Harbor 管理对象；`Tab` 只作为 `Chrome Tab` 的简称出现在 Chrome 语境中。
+产品文档中不使用 `Tab` 指代 Mooring 管理对象；`Tab` 只作为 `Chrome Tab` 的简称出现在 Chrome 语境中。
 
 ## App 规则
 
-- Harbor 的长期数据只来自 Chrome bookmark。
-- Harbor 的运行时投影来自当前主窗口里的 Chrome Group 和 Chrome Tab。
-- Harbor 可以用 `chrome.storage.session` 缓存运行时绑定，用来跨 service worker 唤醒恢复上下文；它不是长期状态来源。
-- Harbor 不把 Chrome session restore 当成长期状态来源。
-- Harbor 只在主窗口启用完整 Workspace / Page 管理。
+- Mooring 的长期数据只来自 Chrome bookmark。
+- Mooring 的运行时投影来自当前主窗口里的 Chrome Group 和 Chrome Tab。
+- Mooring 可以用 `chrome.storage.session` 缓存运行时绑定，用来跨 service worker 唤醒恢复上下文；它不是长期状态来源。
+- Mooring 不把 Chrome session restore 当成长期状态来源。
+- Mooring 只在主窗口启用完整 Workspace / Page 管理。
 - 临时窗口只提供把 Chrome Tab 发送到主窗口的能力。
 
 ## 窗口管理逻辑
 
-只有主窗口会被 Harbor 管理，其他窗口都是临时窗口。
+只有主窗口会被 Mooring 管理，其他窗口都是临时窗口。
 
 ### 主窗口
 
@@ -44,7 +44,7 @@
 ### 临时窗口
 
 - 临时窗口不展示 Workspace 列表。
-- 临时窗口不能直接接管 Harbor 状态。
+- 临时窗口不能直接接管 Mooring 状态。
 - 临时窗口只能：
   - 打开主窗口。
   - 发送当前 Chrome Tab 到主窗口。
@@ -54,36 +54,36 @@
 
 - 清空主窗口 ID。
 - 清空 Workspace / Page 与 Chrome Group / Chrome Tab 的 runtime binding。
-- 保留 `Harbor Workspace` 书签目录。
+- 保留 `Mooring Workspace` 书签目录。
 - 已存在临时窗口不自动升级为主窗口。
 - 下一次打开主窗口或侧边栏时，重新从 bookmark 和当前 Chrome 状态建立运行时关系。
 
 ### Chrome session restore
 
-- Chrome 恢复出来的 Chrome Group 不自动成为 Harbor 长期数据。
-- Harbor 可以在启动或主窗口关闭后的第一次扫描中清空 runtime binding，并重新匹配当前 Chrome Group。
-- Harbor 不主动拆散 Chrome Group，不删除 bookmark，不关闭 Chrome Tab。
+- Chrome 恢复出来的 Chrome Group 不自动成为 Mooring 长期数据。
+- Mooring 可以在启动或主窗口关闭后的第一次扫描中清空 runtime binding，并重新匹配当前 Chrome Group。
+- Mooring 不主动拆散 Chrome Group，不删除 bookmark，不关闭 Chrome Tab。
 
 ## Unmanaged 区域
 
-Unmanaged 区域显示当前主窗口里未被 Harbor 管理的 Chrome 状态。
+Unmanaged 区域显示当前主窗口里未被 Mooring 管理的 Chrome 状态。
 
 - 未管理 Chrome Tab 显示为 unmanaged Temp Page。
 - 未管理 Chrome Group 显示为 unmanaged Chrome Group。
 - Unmanaged 区域显示在 Workspace 管理区下面。
 - Unmanaged 区域不写 bookmark。
 - Unmanaged Chrome Group 保留 Chrome 的颜色和标题，只做简易展示。
-- Harbor 不主动修改 unmanaged Chrome Group，除非用户把其中的 Chrome Tab / Chrome Group 移入 Workspace。
+- Mooring 不主动修改 unmanaged Chrome Group，除非用户把其中的 Chrome Tab / Chrome Group 移入 Workspace。
 
 边界规则：
 
 - 如果用户在 Chrome 里手动创建不匹配任何 Workspace 的 Chrome Group，它留在 Unmanaged 区。
 - 如果 unmanaged Chrome Tab 被拖入 Workspace，它变成 Workspace 内 Temp Page。
-- 如果 unmanaged Chrome Group 被拖入 Workspace 管理区，Harbor 需要按 Workspace 匹配规则处理；不匹配时仍保持 unmanaged。
+- 如果 unmanaged Chrome Group 被拖入 Workspace 管理区，Mooring 需要按 Workspace 匹配规则处理；不匹配时仍保持 unmanaged。
 
 ## Workspace 和 Chrome Group 管理逻辑
 
-Workspace 是 Harbor 的长期容器；Chrome Group 是 Workspace 在主窗口里的运行时投影。
+Workspace 是 Mooring 的长期容器；Chrome Group 是 Workspace 在主窗口里的运行时投影。
 
 Workspace 的长期属性写在 bookmark 文件夹 title 上：
 
@@ -122,7 +122,7 @@ Workspace 的长期属性写在 bookmark 文件夹 title 上：
 
 当 Chrome 创建或恢复 Chrome Group 时：
 
-- Harbor 先按颜色和名称匹配 Workspace。
+- Mooring 先按颜色和名称匹配 Workspace。
 - 如果匹配成功，且 Workspace 未打开，绑定该 Chrome Group。
 - 如果匹配成功，且 Workspace 已经打开，把该 Chrome Group 里的 Chrome Tabs 合并进 Workspace 已绑定的 Chrome Group，然后解除原 Chrome Group。
 - 如果匹配失败，作为 unmanaged Chrome Group 显示。
@@ -131,7 +131,7 @@ Workspace 的长期属性写在 bookmark 文件夹 title 上：
 
 ### Unmanaged Chrome Group 纳入 Workspace
 
-- 用户可以显式把 unmanaged Chrome Group 转成 Harbor Workspace。
+- 用户可以显式把 unmanaged Chrome Group 转成 Mooring Workspace。
 - 转换时创建 Workspace bookmark 文件夹。
 - Workspace 名称和颜色使用 Chrome Group title / color。
 - 原 Chrome Group 绑定到新 Workspace。
@@ -139,13 +139,13 @@ Workspace 的长期属性写在 bookmark 文件夹 title 上：
 
 ### Chrome Group 解散
 
-当 Harbor 管理的 Chrome Group 被解散：
+当 Mooring 管理的 Chrome Group 被解散：
 
 - Workspace 保留。
 - Workspace 解绑该 Chrome Group。
 - Pinned Page 保留 bookmark，并解绑 Chrome Tab。
 - 原先打开的 Chrome Tabs 变成 unmanaged Temp Pages。
-- 如果用户再次点击 Pinned Page，Harbor 会重新创建 Chrome Tab 和 Chrome Group。
+- 如果用户再次点击 Pinned Page，Mooring 会重新创建 Chrome Tab 和 Chrome Group。
 
 ## Page 和 Chrome Tab 管理逻辑
 
@@ -193,39 +193,40 @@ Workspace 内 Page 分为 Pinned Page 和 Temp Page。
 
 ## 排序规则
 
-Harbor managed 区域的排序与 Chrome 标签栏排序完全脱钩。
+Mooring managed 区域的排序与 Chrome 标签栏排序完全脱钩。
 
 排序分为两套：
 
-- Harbor managed 排序：由 Harbor 自己维护，是侧边栏的真实顺序。
+- Mooring managed 排序：由 Mooring 自己维护，是侧边栏的真实顺序。
 - Chrome unmanaged 排序：由 Chrome 当前 Window / Group / Tab 顺序决定。
 
-Chrome Tab index 和 Chrome Group index 不作为 Harbor managed 的排序来源。
+Chrome Tab index 和 Chrome Group index 不作为 Mooring managed 的排序来源。
 
 ### Workspace 排序
 
-- Workspace 长期顺序来自 `Harbor Workspace` 根目录下的书签文件夹顺序。
+- Workspace 长期顺序来自 `Mooring Workspace` 根目录下的书签文件夹顺序。
 - 拖动 Workspace 时，同步移动书签文件夹。
 - 不同步移动 Chrome Group。
 - Chrome Group 只承载 Workspace 的打开状态，不表达 Workspace 顺序。
 
 ### Workspace 与 Unmanaged 的位置
 
-- Harbor 管理的 Workspace 区域排在 Unmanaged 区域前面。
-- Harbor managed 区域在侧边栏里排在 Unmanaged 区域前面。
-- 不要求 Harbor managed 的 Chrome Group 位于 Chrome 标签栏前部。
-- 如果用户在 Chrome 里移动 managed Chrome Tab 或 Chrome Group，不改变 Harbor managed 侧边栏顺序。
-- 如果 unmanaged Chrome Tab 或 Chrome Group 被拖进 managed 区域，只有用户在 Harbor 里显式加入 Workspace 时才变成 managed。
+- Mooring 管理的 Workspace 区域排在 Unmanaged 区域前面。
+- Mooring managed 区域在侧边栏里排在 Unmanaged 区域前面。
+- 不要求 Mooring managed 的 Chrome Group 位于 Chrome 标签栏前部。
+- 如果用户在 Chrome 里移动 managed Chrome Tab 或 Chrome Group，不改变 Mooring managed 侧边栏顺序。
+- 如果 unmanaged Chrome Tab 或 Chrome Group 被拖进 managed 区域，只有用户在 Mooring 里显式加入 Workspace 时才变成 managed。
 
 ### Pinned Page 排序
 
-- Pinned Page 永远显示在 Workspace 上半区。
-- Pinned Page 长期顺序来自 bookmark 顺序。
-- Pinned Page 只能在 Pinned 区排序，不能拖入 Temp 区。
+- Pinned Page 和 Temp Page 可以在 Workspace 内自由混排。
+- Workspace 内 Page 顺序来自 Mooring runtime 顺序。
+- Pinned Page 长期相对顺序来自 bookmark 顺序。
 - 关闭态 Pinned Page 也可以拖动排序。
-- 移动 Pinned Page 只移动 bookmark 顺序。
+- 移动 Pinned Page 会更新 Workspace runtime 顺序，并同步 Pinned Page 彼此之间的 bookmark 顺序。
 - 如果 Pinned Page 没有绑定 Chrome Tab，只移动 bookmark。
-- Pinned Page 可以拖到另一个 Workspace 的 Pinned 区。
+- Pinned Page 可以拖到另一个 Workspace。
+- Pinned Page 只能在 Workspace 内或 Workspace 之间拖动，不能拖到 unmanaged。
 - Pinned Page 跨 Workspace 拖动时，移动对应 bookmark 到目标 Workspace 文件夹。
 - 跨 Workspace 后，它成为目标 Workspace 的 Pinned Page，长期身份仍来自同一个 bookmark。
 - 如果该 Pinned Page 当前绑定 Chrome Tab，只确保 Chrome Tab 位于目标 Workspace 对应 Chrome Group，不同步 Chrome Tab index。
@@ -233,19 +234,19 @@ Chrome Tab index 和 Chrome Group index 不作为 Harbor managed 的排序来源
 
 ### Temp Page 排序
 
-- Temp Page 永远显示在 Workspace 下半区。
-- Temp Page 顺序来自 Harbor runtime 内存顺序。
-- Temp Page 不能拖到 Pinned 区。
+- Temp Page 可以和 Pinned Page 混排。
+- Temp Page 顺序来自 Mooring runtime 顺序。
+- Temp Page 可以拖到 Workspace 或 unmanaged。
 - Temp Page 如需进入 Pinned 区，必须通过星标固定。
-- Temp Page 移动只调整 Harbor runtime 顺序，不写 bookmark，不同步 Chrome Tab index。
-- Chrome 重启、主窗口关闭或 service worker 重启后，Temp Page 顺序可以从当前 Chrome Group 内 Chrome Tab 顺序重新初始化。
+- Temp Page 移动只调整 Mooring runtime 顺序，不写 bookmark，不同步 Chrome Tab index。
+- Chrome 重启、主窗口关闭或 service worker 重启后，Workspace runtime 顺序可以从 bookmark 顺序和当前 Chrome Group 内 Chrome Tab 顺序重新初始化。
 
 ### Unmanaged 排序
 
 - Unmanaged Chrome Tab 顺序来自 Chrome Tab index。
 - Unmanaged Chrome Group 顺序来自 Chrome 当前顺序。
 - 在 Unmanaged 区拖动 Page 时，可以同步 Chrome Tab index。
-- Unmanaged 区不写 bookmark，也不写 Harbor runtime managed 顺序。
+- Unmanaged 区不写 bookmark，也不写 Mooring runtime managed 顺序。
 
 ### 恢复位置
 
@@ -278,7 +279,7 @@ Chrome 层 ID 都是运行时 ID，不能长期保存。
 
 Runtime 层可以用 `chrome.storage.session` 做会话级缓存：
 
-- 缓存内容包括 Workspace 与 Chrome Group 绑定、Pinned Page 与 Chrome Tab 绑定、Temp Page 运行时顺序。
+- 缓存内容包括 Workspace 与 Chrome Group 绑定、Pinned Page 与 Chrome Tab 绑定、Workspace Page 运行时顺序。
 - 缓存只解决 service worker 休眠后再次唤醒时的上下文恢复。
 - 读取缓存后必须验证 Chrome Group / Chrome Tab 是否仍然存在。
 - 主窗口关闭、Chrome 重启或绑定失效时可以清空并重建。
@@ -286,9 +287,9 @@ Runtime 层可以用 `chrome.storage.session` 做会话级缓存：
 
 ### Bookmark 层
 
-负责 Harbor 的长期结构：
+负责 Mooring 的长期结构：
 
-- `Harbor Workspace` 根目录。
+- `Mooring Workspace` 根目录。
 - Workspace bookmark 文件夹。
 - Pinned Page bookmark。
 - Workspace 顺序。
@@ -298,9 +299,9 @@ Bookmark 层是长期状态来源。
 
 ## 不做的事
 
-- 不把 Harbor Page 叫 Tab。
+- 不把 Mooring Page 叫 Tab。
 - 不把 Chrome Tab ID 当长期身份。
 - 不把 Chrome Group ID 当长期身份。
 - 不把 Temp Page 写入 bookmark。
 - 不自动把 dirty Page 当前 URL 写回 bookmark。
-- 不让临时窗口接管 Harbor Workspace。
+- 不让临时窗口接管 Mooring Workspace。

@@ -1,10 +1,10 @@
 # Window 模型
 
-Window 模型定义 Harbor 在多个 Chrome 窗口之间的工作边界。
+Window 模型定义 Mooring 在多个 Chrome 窗口之间的工作边界。
 
 ## 目标
 
-- Harbor 只在一个主窗口里提供完整 Workspace / Page 功能。
+- Mooring 只在一个主窗口里提供完整 Workspace / Page 功能。
 - 其他窗口保持临时窗口身份，不自动变成 Workspace 主基地。
 - 主窗口 ID 只保存在运行时内存里，不写入 `chrome.storage.local`。
 - Workspace / Page 与 Chrome Group / Chrome Tab 的运行时绑定可以写入 `chrome.storage.session`，但主窗口 ID 不写入 session。
@@ -22,7 +22,7 @@ Window 模型定义 Harbor 在多个 Chrome 窗口之间的工作边界。
 - 主窗口侧边栏显示 Workspace / Page 完整管理 UI。
 - UI 不提供 `Set as primary`。
 
-Chrome 本身没有主窗口概念，主窗口是 Harbor 自己的产品状态。
+Chrome 本身没有主窗口概念，主窗口是 Mooring 自己的产品状态。
 
 ### 临时窗口
 
@@ -47,17 +47,17 @@ Chrome 本身没有主窗口概念，主窗口是 Harbor 自己的产品状态�
 
 主窗口关闭时：
 
-- Harbor 清空内存里的 `primaryWindowId`。
-- Harbor 清空 Workspace / Chrome Group / Page / Chrome Tab 的运行时绑定，并同步清空 `chrome.storage.session` 里的绑定缓存。
-- `Harbor Workspace` 书签目录保留不变。
+- Mooring 清空内存里的 `primaryWindowId`。
+- Mooring 清空 Workspace / Chrome Group / Page / Chrome Tab 的运行时绑定，并同步清空 `chrome.storage.session` 里的绑定缓存。
+- `Mooring Workspace` 书签目录保留不变。
 - 已存在的其他窗口仍然是临时窗口。
-- Chrome session restore 出来的 Chrome Group 不作为 Harbor 长期状态。
-- Harbor 不因为重建 runtime binding 主动拆散 Chrome Group。
+- Chrome session restore 出来的 Chrome Group 不作为 Mooring 长期状态。
+- Mooring 不因为重建 runtime binding 主动拆散 Chrome Group。
 
 下一次打开主窗口或侧边栏时：
 
 1. 重新确认当前窗口身份。
-2. 重新读取 `Harbor Workspace` 书签目录。
+2. 重新读取 `Mooring Workspace` 书签目录。
 3. 重新建立 Workspace 与 Chrome Group、Page 与 Chrome Tab 的运行时关系。
 
 ## 临时窗口操作
@@ -92,4 +92,4 @@ await chrome.windows.update(primaryWindowId, { focused: true });
 - 不把主窗口 ID 写入持久化存储。
 - 不让临时窗口自动升级成主窗口。
 - 不在多个窗口同时启用完整 Workspace / Page 管理。
-- 不依赖 Chrome 自己的窗口恢复作为 Harbor 的长期状态来源。
+- 不依赖 Chrome 自己的窗口恢复作为 Mooring 的长期状态来源。

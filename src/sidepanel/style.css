@@ -230,8 +230,7 @@ input:focus-visible {
   box-shadow: 0 1px 4px rgb(15 23 42 / 10%);
 }
 
-.group-section.drag-over,
-.tab.drag-over {
+.group-section.drag-over {
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
 }
@@ -396,10 +395,26 @@ h2 {
 .tabs {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.tab-drop-gap {
+  height: 3px;
+  border-radius: 999px;
+  list-style: none;
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease,
+    height 120ms ease;
+}
+
+.tab-drop-gap.active {
+  height: 4px;
+  background: var(--group-color, var(--color-focus));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--group-color, var(--color-focus)) 22%, transparent);
 }
 
 .unmanaged-group {
@@ -422,7 +437,7 @@ h2 {
 
 .tab {
   display: grid;
-  grid-template-columns: 24px 24px minmax(0, 1fr) auto;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
   gap: 4px;
   align-items: center;
   min-height: 40px;
@@ -430,6 +445,7 @@ h2 {
   border-radius: 6px;
   padding: 0 4px;
   background: var(--color-surface);
+  cursor: grab;
   transition:
     border-color 120ms ease,
     background-color 120ms ease,
@@ -446,6 +462,28 @@ h2 {
   border-color: var(--group-color, var(--color-focus));
 }
 
+.tab.pinned-tab {
+  border-left: 2px solid var(--group-color, var(--color-focus));
+  padding-left: 4px;
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--group-color, var(--color-focus)) 7%, transparent),
+      transparent 46%
+    ),
+    var(--color-surface);
+}
+
+.tab.pinned-tab:hover {
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--group-color, var(--color-focus)) 10%, transparent),
+      transparent 50%
+    ),
+    var(--color-surface-hover);
+}
+
 .tab.closed-tab {
   border-style: dashed;
   opacity: 0.72;
@@ -456,30 +494,12 @@ h2 {
 }
 
 .tab.dragging {
+  cursor: grabbing;
   opacity: 0.5;
 }
 
 .group-section.dragging {
   opacity: 0.6;
-}
-
-.drag-handle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-handle);
-  text-align: center;
-  cursor: grab;
-  user-select: none;
-  transition:
-    color 120ms ease,
-    background-color 120ms ease;
-}
-
-.drag-handle:hover {
-  border-radius: 6px;
-  background: var(--color-control-hover);
-  color: var(--group-color, var(--color-focus));
 }
 
 .tab-favicon {

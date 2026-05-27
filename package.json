@@ -1,7 +1,7 @@
 {
-  "name": "harbor-workspaces",
+  "name": "mooring-workspaces",
   "version": "1.0.0",
-  "description": "A Chrome side panel workspace harbor for tabs, groups, and bookmark-backed pinned pages.",
+  "description": "Lightweight side panel workspaces for Chrome tabs, groups, and bookmark-backed pinned pages.",
   "private": true,
   "type": "module",
   "scripts": {

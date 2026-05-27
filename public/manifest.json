@@ -12,7 +12,7 @@
     "128": "icons/icon-128.png"
   },
   "action": {
-    "default_title": "__MSG_openHarbor__",
+    "default_title": "__MSG_openMooring__",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",
@@ -26,7 +26,7 @@
         "default": "Ctrl+Shift+Y",
         "mac": "Command+Shift+Y"
       },
-      "description": "__MSG_openHarbor__"
+      "description": "__MSG_openMooring__"
     }
   },
   "background": {

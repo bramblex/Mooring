@@ -1,11 +1,11 @@
 {
   "appName": {
-    "message": "Harbor"
+    "message": "Mooring"
   },
   "appDescription": {
-    "message": "A workspace harbor for Chrome tabs, groups, and bookmark-backed pinned pages."
+    "message": "Lightweight side panel workspaces for Chrome tabs, groups, and bookmark-backed pinned pages."
   },
-  "openHarbor": {
-    "message": "Open Harbor"
+  "openMooring": {
+    "message": "Open Mooring"
   }
 }
