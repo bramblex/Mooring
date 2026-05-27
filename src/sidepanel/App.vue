@@ -961,7 +961,12 @@ onMounted(async () => {
                 </span>
               </span>
             </button>
-            <div v-else class="tab-title-static" :title="pageTitle(page)">
+            <div
+              v-else
+              class="tab-title-static"
+              :title="pageTitle(page)"
+              @click="openWorkspacePage(workspace, page)"
+            >
               <button
                 v-if="page.dirty"
                 class="dirty-button"
@@ -976,7 +981,6 @@ onMounted(async () => {
                 class="tab-title-button"
                 type="button"
                 :title="pageTitle(page)"
-                @click="openWorkspacePage(workspace, page)"
               >
                 <span class="tab-title">
                   {{ pageTitle(page) }}
