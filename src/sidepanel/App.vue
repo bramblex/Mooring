@@ -6,7 +6,6 @@ import {
   File,
   Pencil,
   Plus,
-  RefreshCw,
   Star,
   Trash2,
   X,
@@ -614,23 +613,9 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main v-if="!isWindowContextReady" class="panel">
-    <header>
-      <h1 class="brand-title">
-        <img src="/logo.svg" alt="" class="brand-logo">
-        {{ t("appName") }}
-      </h1>
-    </header>
-  </main>
+  <main v-if="!isWindowContextReady" class="panel"></main>
 
   <main v-else-if="!isPrimaryWindow" class="panel temporary-panel">
-    <header>
-      <h1 class="brand-title">
-        <img src="/logo.svg" alt="" class="brand-logo">
-        {{ t("appName") }}
-      </h1>
-    </header>
-
     <section class="temporary-actions" :aria-label="t('temporaryWindow')">
       <p>
         {{ t("temporaryWindowDescription") }}
@@ -662,34 +647,7 @@ onMounted(async () => {
     </section>
   </main>
 
-  <main v-else class="panel">
-    <header>
-      <h1 class="brand-title">
-        <img src="/logo.svg" alt="" class="brand-logo">
-        {{ t("appName") }}
-      </h1>
-      <div class="toolbar">
-        <button
-          class="icon-button"
-          type="button"
-          :title="t('newWorkspace')"
-          :aria-label="t('newWorkspace')"
-          @click="createWorkspace"
-        >
-          <Plus :size="18" aria-hidden="true" />
-        </button>
-        <button
-          class="icon-button"
-          type="button"
-          :title="t('refresh')"
-          :aria-label="t('refresh')"
-          @click="refreshTabs"
-        >
-          <RefreshCw :size="18" aria-hidden="true" />
-        </button>
-      </div>
-    </header>
-
+  <main v-else class="panel primary-panel">
     <section class="groups" :aria-label="t('openTabs')">
       <!-- docs/product-logic.md: Mooring 管理的 Workspace 区域排在 Unmanaged 区域前面。 -->
       <template v-for="(workspace, workspaceIndex) in workspaces" :key="workspace.id">
@@ -948,7 +906,7 @@ onMounted(async () => {
 
       <!-- docs/product-logic.md: Unmanaged 区域显示未被 Mooring 管理的 Chrome Tab 或 Chrome Group。 -->
       <section
-        class="group-section ungrouped"
+        class="unmanaged-section"
       >
         <ol class="tabs">
           <li
@@ -1075,5 +1033,15 @@ onMounted(async () => {
         </section>
       </section>
     </section>
+
+    <button
+      class="icon-button floating-create-button"
+      type="button"
+      :title="t('newWorkspace')"
+      :aria-label="t('newWorkspace')"
+      @click="createWorkspace"
+    >
+      <Plus :size="22" aria-hidden="true" />
+    </button>
   </main>
 </template>

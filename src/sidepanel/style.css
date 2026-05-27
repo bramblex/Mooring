@@ -62,42 +62,11 @@ textarea {
   flex-direction: column;
   gap: 12px;
   min-height: 100vh;
-  padding: 12px;
+  padding: 6px;
 }
 
-header,
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-header {
-  justify-content: space-between;
-}
-
-.toolbar {
-  gap: 6px;
-}
-
-h1 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: 0;
-}
-
-.brand-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.brand-logo {
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
+.primary-panel {
+  padding-bottom: 66px;
 }
 
 button,
@@ -209,6 +178,31 @@ input:focus-visible {
   color: #d93025;
 }
 
+.floating-create-button {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 20;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  border-color: var(--color-focus);
+  border-radius: 999px;
+  color: #fff;
+  background: var(--color-focus);
+  box-shadow: 0 8px 20px rgb(15 23 42 / 22%);
+}
+
+.floating-create-button:hover,
+.floating-create-button:focus-visible {
+  border-color: var(--color-focus);
+  color: #fff;
+  background: color-mix(in srgb, var(--color-focus) 88%, #000);
+  box-shadow: 0 10px 24px rgb(15 23 42 / 28%);
+  transform: translateY(-1px);
+}
+
 .groups {
   display: flex;
   flex-direction: column;
@@ -235,7 +229,7 @@ input:focus-visible {
   border: 1px solid var(--group-color, var(--color-group-border));
   border-left-width: 4px;
   border-radius: 6px;
-  padding: 8px;
+  padding: 0;
   background: var(--group-bg, var(--color-group-bg));
   transition:
     border-color 120ms ease,
@@ -253,8 +247,7 @@ input:focus-visible {
   gap: 6px;
   align-items: center;
   position: relative;
-  margin: -8px -8px 0;
-  padding: 8px;
+  padding: 4px 8px;
   border-radius: 6px 6px 0 0;
   cursor: grab;
 }
@@ -276,10 +269,6 @@ input:focus-visible {
   height: 8px;
   background: var(--color-focus);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-focus) 22%, transparent);
-}
-
-.ungrouped .group-header {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 h2 {
@@ -450,7 +439,7 @@ h2 {
   flex-direction: column;
   gap: 0;
   margin: 0;
-  padding: 0;
+  padding: 0 8px 8px;
   list-style: none;
 }
 
@@ -468,6 +457,10 @@ h2 {
   height: 4px;
   background: var(--group-color, var(--color-focus));
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--group-color, var(--color-focus)) 22%, transparent);
+}
+
+.tabs > .tab-drop-gap:first-child:not(.active) {
+  height: 0;
 }
 
 .empty-workspace-drop {
@@ -495,12 +488,24 @@ h2 {
 
 .unmanaged-empty-drop {
   border-color: var(--color-surface-border);
-  background: var(--color-surface);
+  background: transparent;
 }
 
 .unmanaged-empty-drop.active {
   border-color: var(--color-focus);
   background: color-mix(in srgb, var(--color-focus) 9%, transparent);
+}
+
+.unmanaged-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-surface-border);
+}
+
+.unmanaged-section .tabs {
+  padding: 0;
 }
 
 .unmanaged-group {
