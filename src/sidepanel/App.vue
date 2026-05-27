@@ -94,6 +94,8 @@ const editingBookmarkId = ref<string | null>(null);
 const editingWorkspaceId = ref<string | null>(null);
 const workspaceTitleInputs = ref<Record<string, HTMLInputElement | null>>({});
 const pageTitleInputs = ref<Record<string, HTMLInputElement | null>>({});
+const workspaceSectionElements = ref<Record<string, HTMLElement | null>>({});
+const unmanagedSectionElement = ref<HTMLElement | null>(null);
 const windowContext = ref<WindowContext | null>(null);
 const currentWindowId = ref<number | undefined>();
 const { t } = useI18n();
@@ -129,6 +131,39 @@ function pageFavicon(page: PageModel) {
 
 function groupColorStyle(color: TabGroupColor) {
   return GROUP_COLOR_STYLES[color];
+}
+
+function setWorkspaceSectionElement(workspaceId: string, element: unknown) {
+  workspaceSectionElements.value[workspaceId] = element instanceof HTMLElement ? element : null;
+}
+
+function setUnmanagedSectionElement(element: unknown) {
+  unmanagedSectionElement.value = element instanceof HTMLElement ? element : null;
+}
+
+function scrollToWorkspace(workspaceId: string) {
+  workspaceSectionElements.value[workspaceId]?.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+}
+
+function scrollToUnmanaged() {
+  unmanagedSectionElement.value?.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+}
+
+function workspaceOpenPageCount(workspace: WorkspaceView) {
+  return workspace.pages.filter((page) => page.open).length;
+}
+
+function unmanagedOpenPageCount() {
+  const unmanagedGroupPages = workspaceState.value.unmanagedGroups.flatMap((group) => group.pages);
+
+  return [...workspaceState.value.unmanagedPages, ...unmanagedGroupPages]
+    .filter((page) => page.open).length;
 }
 
 function isEditableElement(target: EventTarget | null) {
@@ -391,6 +426,14 @@ function pageGapKey(workspaceId: string | null, index: number) {
   return `page-gap-${workspaceId || "unmanaged"}-${index}`;
 }
 
+function workspaceNavKey(workspaceId: string) {
+  return `workspace-nav-${workspaceId}`;
+}
+
+function tempNavKey() {
+  return "workspace-nav-temp";
+}
+
 function workspaceGapKey(index: number) {
   return `workspace-gap-${index}`;
 }
@@ -541,6 +584,38 @@ async function onPageGapDrop(workspaceId: string | null, index: number, event: D
   await onDrop(workspaceId, index, event);
 }
 
+function onWorkspaceNavDragOver(workspace: WorkspaceView, event: DragEvent) {
+  if (!canDropPageInto(workspace.id)) {
+    dragOverKey.value = "";
+    return;
+  }
+
+  onDragOver(workspaceNavKey(workspace.id), event);
+}
+
+async function onWorkspaceNavDrop(workspace: WorkspaceView, event: DragEvent) {
+  if (!canDropPageInto(workspace.id)) return;
+
+  await onDrop(workspace.id, workspace.pages.length, event);
+  scrollToWorkspace(workspace.id);
+}
+
+function onTempNavDragOver(event: DragEvent) {
+  if (!canDropPageInto(null)) {
+    dragOverKey.value = "";
+    return;
+  }
+
+  onDragOver(tempNavKey(), event);
+}
+
+async function onTempNavDrop(event: DragEvent) {
+  if (!canDropPageInto(null)) return;
+
+  await onDrop(null, workspaceState.value.unmanagedPages.length, event);
+  scrollToUnmanaged();
+}
+
 async function onWorkspaceDrop(index: number, event: DragEvent) {
   event.preventDefault();
   event.stopPropagation();
@@ -648,6 +723,44 @@ onMounted(async () => {
   </main>
 
   <main v-else class="panel primary-panel">
+    <nav
+      v-if="workspaces.length > 0 || unmanagedOpenPageCount() > 0"
+      class="workspace-navigator"
+      :aria-label="t('openTabs')"
+    >
+      <button
+        v-for="workspace in workspaces"
+        :key="workspace.id"
+        class="workspace-nav-item"
+        :class="{ active: dragOverKey === workspaceNavKey(workspace.id) }"
+        type="button"
+        :title="workspace.name"
+        :style="groupColorStyle(workspace.color)"
+        @click="scrollToWorkspace(workspace.id)"
+        @dragover="onWorkspaceNavDragOver(workspace, $event)"
+        @dragleave="onDragLeave(workspaceNavKey(workspace.id))"
+        @drop="onWorkspaceNavDrop(workspace, $event)"
+      >
+        <span class="color-dot" aria-hidden="true"></span>
+        <span>{{ workspace.name }}</span>
+        <span class="workspace-nav-count">{{ workspaceOpenPageCount(workspace) }}</span>
+      </button>
+      <button
+        class="workspace-nav-item temp-nav-item"
+        :class="{ active: dragOverKey === tempNavKey() }"
+        type="button"
+        :title="t('tempPages')"
+        @click="scrollToUnmanaged"
+        @dragover="onTempNavDragOver"
+        @dragleave="onDragLeave(tempNavKey())"
+        @drop="onTempNavDrop"
+      >
+        <span class="color-dot" aria-hidden="true"></span>
+        <span>{{ t("tempPages") }}</span>
+        <span class="workspace-nav-count">{{ unmanagedOpenPageCount() }}</span>
+      </button>
+    </nav>
+
     <section class="groups" :aria-label="t('openTabs')">
       <!-- docs/product-logic.md: Mooring 管理的 Workspace 区域排在 Unmanaged 区域前面。 -->
       <template v-for="(workspace, workspaceIndex) in workspaces" :key="workspace.id">
@@ -660,6 +773,7 @@ onMounted(async () => {
         ></div>
         <section
           class="group-section"
+          :ref="(element) => setWorkspaceSectionElement(workspace.id, element)"
           :class="{ dragging: draggedWorkspaceId === workspace.id }"
           :style="groupColorStyle(workspace.color)"
           @dragover="onWorkspaceSectionDragOver(workspaceIndex, $event)"
@@ -907,6 +1021,7 @@ onMounted(async () => {
       <!-- docs/product-logic.md: Unmanaged 区域显示未被 Mooring 管理的 Chrome Tab 或 Chrome Group。 -->
       <section
         class="unmanaged-section"
+        :ref="setUnmanagedSectionElement"
       >
         <ol class="tabs">
           <li

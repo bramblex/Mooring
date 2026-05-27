@@ -60,7 +60,6 @@ textarea {
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
   min-height: 100vh;
   padding: 6px;
 }
@@ -209,6 +208,77 @@ input:focus-visible {
   gap: 0;
 }
 
+.workspace-navigator {
+  position: sticky;
+  top: 0;
+  z-index: 15;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 86px;
+  margin: -6px -6px 2px;
+  padding: 6px;
+  overflow-y: auto;
+  background: color-mix(in srgb, var(--color-bg) 92%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-surface-border) 70%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.workspace-nav-item {
+  display: inline-grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 24px;
+  border-color: color-mix(in srgb, var(--group-color) 38%, transparent);
+  border-radius: 6px;
+  padding: 0 8px;
+  color: var(--color-text);
+  background: var(--group-bg, var(--color-group-bg));
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.workspace-nav-item:hover,
+.workspace-nav-item:focus-visible,
+.workspace-nav-item.active {
+  border-color: var(--group-color, var(--color-focus));
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--group-bg, var(--color-group-bg)) 72%, var(--color-control-hover));
+  box-shadow: none;
+  transform: none;
+}
+
+.workspace-nav-item span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.temp-nav-item {
+  --group-color: var(--color-muted);
+  --group-bg: color-mix(in srgb, var(--color-surface) 74%, var(--color-bg));
+  border-color: color-mix(in srgb, var(--color-muted) 24%, transparent);
+}
+
+.temp-nav-item .color-dot {
+  background: #fff;
+}
+
+.workspace-nav-count {
+  min-width: 16px;
+  border-radius: 999px;
+  padding: 0 4px;
+  color: var(--color-muted);
+  background: color-mix(in srgb, var(--group-color) 14%, transparent);
+  text-align: center;
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .temporary-actions {
   display: flex;
   flex-direction: column;
@@ -226,6 +296,7 @@ input:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 0;
+  scroll-margin-top: 108px;
   border: 1px solid var(--group-color, var(--color-group-border));
   border-left-width: 4px;
   border-radius: 6px;
@@ -500,6 +571,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  scroll-margin-top: 108px;
   padding-top: 8px;
   border-top: 1px solid var(--color-surface-border);
 }
