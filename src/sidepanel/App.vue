@@ -359,6 +359,14 @@ async function toggleWorkspace(workspace: WorkspaceView) {
   await refreshTabs();
 }
 
+async function toggleWorkspaceFromHeader(workspace: WorkspaceView, event: MouseEvent) {
+  const target = event.target;
+  if (isEditableElement(target)) return;
+  if (target instanceof HTMLElement && target.closest("button, .group-color-picker")) return;
+
+  await toggleWorkspace(workspace);
+}
+
 async function deleteWorkspace(workspace: WorkspaceView) {
   if (!await requestConfirm(t("deleteWorkspaceConfirm"))) return;
 
@@ -1039,9 +1047,11 @@ onMounted(async () => {
         >
         <div
           class="group-header"
+          :title="t('doubleClickToggleWorkspace')"
           :draggable="!isEditingWorkspace(workspace)"
           @dragstart="onWorkspaceDragStart(workspace, $event)"
           @dragend="onDragEnd"
+          @dblclick="toggleWorkspaceFromHeader(workspace, $event)"
         >
           <div class="group-main">
             <div class="group-color-picker" :style="groupColorStyle(workspace.color)">
