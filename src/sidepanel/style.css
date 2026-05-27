@@ -167,6 +167,24 @@ input:focus-visible {
   color: var(--color-muted);
 }
 
+.icon-button.ghost {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-muted);
+}
+
+.icon-button.ghost:hover,
+.icon-button.ghost:focus-visible {
+  border-color: transparent;
+  background: var(--color-control-hover);
+  color: var(--color-text);
+  box-shadow: none;
+}
+
 .icon-button.subtle:hover,
 .icon-button.subtle:focus-visible {
   border-color: var(--color-control-border);
@@ -188,7 +206,6 @@ input:focus-visible {
 
 .icon-button.danger:hover,
 .icon-button.danger:focus-visible {
-  border-color: #d93025;
   color: #d93025;
 }
 
@@ -236,8 +253,8 @@ input:focus-visible {
 }
 
 .group-header {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto auto auto;
+  display: flex;
+  justify-content: space-between;
   gap: 6px;
   align-items: center;
   position: relative;
@@ -254,27 +271,24 @@ h2 {
   letter-spacing: 0;
 }
 
-.group-drag-handle {
-  display: inline-flex;
+.group-main,
+.group-actions {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 32px;
-  color: var(--group-color, var(--color-handle));
-  text-align: center;
-  cursor: grab;
-  user-select: none;
-  transition:
-    color 120ms ease,
-    background-color 120ms ease;
+  gap: 6px;
 }
 
-.group-drag-handle:hover {
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--group-color) 14%, transparent);
-  color: var(--group-color, var(--color-focus));
+.group-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.group-actions {
+  flex: 0 0 auto;
 }
 
 .group-title {
+  flex: 1 1 auto;
   min-height: 32px;
   border: 1px solid var(--color-control-border);
   border-radius: 6px;
@@ -293,16 +307,36 @@ h2 {
   background: var(--color-control-hover);
 }
 
+.editable-title-wrap {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.group-title-text {
+  flex: 0 1 auto;
+  overflow: hidden;
+  min-width: 0;
+  margin: 0;
+  padding-left: 2px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .group-color-picker {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
+  width: 28px;
+  min-width: 28px;
   height: 32px;
-  border: 1px solid var(--group-color, var(--color-control-border));
+  border: 0;
   border-radius: 6px;
-  background: var(--color-control-bg);
+  background: transparent;
   cursor: pointer;
   transition:
     border-color 120ms ease,
@@ -312,9 +346,8 @@ h2 {
 
 .group-color-picker:hover,
 .group-color-picker:focus-within {
-  border-color: var(--group-color, var(--color-focus));
   background: var(--color-control-hover);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 12%);
+  box-shadow: none;
 }
 
 .color-picker-trigger {
@@ -352,7 +385,7 @@ h2 {
   position: absolute;
   z-index: 10;
   top: calc(100% + 6px);
-  right: 0;
+  left: 0;
   display: grid;
   grid-template-columns: repeat(3, 28px);
   gap: 6px;
@@ -606,10 +639,11 @@ h2 {
 }
 
 .tab-title-static .tab-title-button {
-  display: flex;
-  flex: 1 1 auto;
+  display: inline-flex;
+  flex: 0 1 auto;
   align-items: center;
   align-self: stretch;
+  max-width: 100%;
 }
 
 .inline-icon-button {
@@ -628,9 +662,23 @@ h2 {
 
 .inline-icon-button:hover,
 .inline-icon-button:focus-visible {
-  border-color: var(--color-control-border);
+  border-color: transparent;
   background: var(--color-control-hover);
   color: var(--color-focus);
+}
+
+.edit-inline-button {
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.group-header:hover .edit-inline-button,
+.tab:hover .edit-inline-button,
+.edit-inline-button:focus-visible {
+  opacity: 1;
 }
 
 .dirty-button {

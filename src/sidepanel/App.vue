@@ -4,7 +4,6 @@ import {
   Eye,
   EyeOff,
   File,
-  GripVertical,
   Pencil,
   Plus,
   RefreshCw,
@@ -12,7 +11,7 @@ import {
   Trash2,
   X,
 } from "@lucide/vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import { useI18n } from "../i18n";
 import type { PageModel } from "../models/page.model";
 import type { WindowContext } from "../models/window.model";
@@ -93,6 +92,9 @@ const draggedWorkspaceId = ref<string | null>(null);
 const dragOverKey = ref("");
 const openColorPickerGroupId = ref<string | null>(null);
 const editingBookmarkId = ref<string | null>(null);
+const editingWorkspaceId = ref<string | null>(null);
+const workspaceTitleInputs = ref<Record<string, HTMLInputElement | null>>({});
+const pageTitleInputs = ref<Record<string, HTMLInputElement | null>>({});
 const windowContext = ref<WindowContext | null>(null);
 const currentWindowId = ref<number | undefined>();
 const { t } = useI18n();
@@ -219,7 +221,13 @@ async function updateWorkspaceTitle(workspace: WorkspaceView, event: Event) {
     workspaceId: workspace.id,
     name: target.value.trim() || t("untitledGroup"),
   });
+  editingWorkspaceId.value = null;
   await refreshTabs();
+}
+
+function editWorkspaceTitle(workspace: WorkspaceView) {
+  editingWorkspaceId.value = workspace.id;
+  void focusWorkspaceTitleInput(workspace.id);
 }
 
 async function updateWorkspaceColor(workspace: WorkspaceView, color: TabGroupColor) {
@@ -245,6 +253,14 @@ async function deleteWorkspace(workspace: WorkspaceView) {
 
   await sendMessage({
     type: "DELETE_WORKSPACE",
+    workspaceId: workspace.id,
+  });
+  await refreshTabs();
+}
+
+async function closeWorkspacePages(workspace: WorkspaceView) {
+  await sendMessage({
+    type: "CLOSE_WORKSPACE_PAGES",
     workspaceId: workspace.id,
   });
   await refreshTabs();
@@ -290,6 +306,22 @@ function editPinnedPageTitle(page: PageModel) {
   if (!page.bookmarkId) return;
 
   editingBookmarkId.value = page.bookmarkId;
+  void focusPageTitleInput(page.bookmarkId);
+}
+
+async function focusWorkspaceTitleInput(workspaceId: string) {
+  await nextTick();
+  focusEditableInput(workspaceTitleInputs.value[workspaceId]);
+}
+
+async function focusPageTitleInput(bookmarkId: string) {
+  await nextTick();
+  focusEditableInput(pageTitleInputs.value[bookmarkId]);
+}
+
+function focusEditableInput(input: HTMLInputElement | null | undefined) {
+  input?.focus();
+  input?.select();
 }
 
 async function closeWorkspacePage(page: PageModel) {
@@ -624,75 +656,92 @@ onMounted(async () => {
         @drop="onWorkspaceSectionDrop(workspace, $event)"
       >
         <div class="group-header">
-          <span
-            class="group-drag-handle"
-            draggable="true"
-            :title="t('dragGroup')"
-            :aria-label="t('dragGroup')"
-            @dragstart="onWorkspaceDragStart(workspace, $event)"
-            @dragend="onDragEnd"
-          >
-            <GripVertical :size="16" aria-hidden="true" />
-          </span>
-          <input
-            class="group-title"
-            :value="workspace.name"
-            :aria-label="t('groupTitle')"
-            @blur="updateWorkspaceTitle(workspace, $event)"
-            @keydown.enter="($event.target as HTMLInputElement).blur()"
-          >
-          <div class="group-color-picker" :style="groupColorStyle(workspace.color)">
-            <button
-              class="color-picker-trigger"
-              type="button"
-              :title="t('groupColor')"
-              :aria-label="t('groupColor')"
-              :aria-expanded="openColorPickerGroupId === workspace.id"
-              @click.stop="toggleColorPicker(workspace.id)"
-            >
-              <span class="color-dot" aria-hidden="true"></span>
-            </button>
-            <div
-              v-if="openColorPickerGroupId === workspace.id"
-              class="color-picker-popover"
-              role="menu"
-              :aria-label="t('groupColor')"
-              @click.stop
-            >
+          <div class="group-main">
+            <div class="group-color-picker" :style="groupColorStyle(workspace.color)">
               <button
-                v-for="color in GROUP_COLORS"
-                :key="color"
-                class="color-option"
+                class="color-picker-trigger"
                 type="button"
-                role="menuitemradio"
-                :aria-checked="workspace.color === color"
-                :title="color"
-                :style="groupColorStyle(color)"
-                @click="updateWorkspaceColor(workspace, color)"
+                :title="t('groupColor')"
+                :aria-label="t('groupColor')"
+                :aria-expanded="openColorPickerGroupId === workspace.id"
+                @click.stop="toggleColorPicker(workspace.id)"
               >
                 <span class="color-dot" aria-hidden="true"></span>
               </button>
+              <div
+                v-if="openColorPickerGroupId === workspace.id"
+                class="color-picker-popover"
+                role="menu"
+                :aria-label="t('groupColor')"
+                @click.stop
+              >
+                <button
+                  v-for="color in GROUP_COLORS"
+                  :key="color"
+                  class="color-option"
+                  type="button"
+                  role="menuitemradio"
+                  :aria-checked="workspace.color === color"
+                  :title="color"
+                  :style="groupColorStyle(color)"
+                  @click="updateWorkspaceColor(workspace, color)"
+                >
+                  <span class="color-dot" aria-hidden="true"></span>
+                </button>
+              </div>
+            </div>
+            <input
+              v-if="editingWorkspaceId === workspace.id"
+              :ref="(element) => { workspaceTitleInputs[workspace.id] = element as HTMLInputElement | null; }"
+              class="group-title"
+              :value="workspace.name"
+              :aria-label="t('groupTitle')"
+              @blur="updateWorkspaceTitle(workspace, $event)"
+              @keydown.enter="($event.target as HTMLInputElement).blur()"
+            >
+            <div v-else class="editable-title-wrap">
+              <h2 class="group-title-text">{{ workspace.name }}</h2>
+              <button
+                class="inline-icon-button edit-inline-button"
+                type="button"
+                :title="t('groupTitle')"
+                :aria-label="t('groupTitle')"
+                @click.stop="editWorkspaceTitle(workspace)"
+              >
+                <Pencil :size="13" aria-hidden="true" />
+              </button>
             </div>
           </div>
-          <button
-            class="icon-button"
-            type="button"
-            :title="workspace.collapsed ? t('showWorkspace') : t('hideWorkspace')"
-            :aria-label="workspace.collapsed ? t('showWorkspace') : t('hideWorkspace')"
-            @click="toggleWorkspace(workspace)"
-          >
-            <Eye v-if="workspace.collapsed" :size="17" aria-hidden="true" />
-            <EyeOff v-else :size="17" aria-hidden="true" />
-          </button>
-          <button
-            class="icon-button danger"
-            type="button"
-            :title="t('deleteWorkspace')"
-            :aria-label="t('deleteWorkspace')"
-            @click="deleteWorkspace(workspace)"
-          >
-            <Trash2 :size="17" aria-hidden="true" />
-          </button>
+          <div class="group-actions">
+            <button
+              class="icon-button ghost"
+              type="button"
+              :title="workspace.collapsed ? t('showWorkspace') : t('hideWorkspace')"
+              :aria-label="workspace.collapsed ? t('showWorkspace') : t('hideWorkspace')"
+              @click="toggleWorkspace(workspace)"
+            >
+              <Eye v-if="workspace.collapsed" :size="17" aria-hidden="true" />
+              <EyeOff v-else :size="17" aria-hidden="true" />
+            </button>
+            <button
+              class="icon-button ghost danger"
+              type="button"
+              :title="t('deleteWorkspace')"
+              :aria-label="t('deleteWorkspace')"
+              @click="deleteWorkspace(workspace)"
+            >
+              <Trash2 :size="17" aria-hidden="true" />
+            </button>
+            <button
+              class="icon-button ghost"
+              type="button"
+              :title="t('closeWorkspacePages')"
+              :aria-label="t('closeWorkspacePages')"
+              @click="closeWorkspacePages(workspace)"
+            >
+              <X :size="17" aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         <ol v-if="!workspace.collapsed" class="tabs">
@@ -740,6 +789,7 @@ onMounted(async () => {
             </button>
             <input
               v-if="page.pinned && editingBookmarkId === page.bookmarkId"
+              :ref="(element) => { if (page.bookmarkId) pageTitleInputs[page.bookmarkId] = element as HTMLInputElement | null; }"
               class="tab-title-input"
               :value="pageTitle(page)"
               :title="pageTitle(page)"
@@ -788,7 +838,7 @@ onMounted(async () => {
                 </span>
               </button>
               <button
-                class="inline-icon-button"
+                class="inline-icon-button edit-inline-button"
                 type="button"
                 :title="t('bookmarkTitle')"
                 :aria-label="t('bookmarkTitle')"

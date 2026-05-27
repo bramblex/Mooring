@@ -377,6 +377,24 @@ export class WorkspaceModel {
     void this.persistRuntimeBindings();
   }
 
+  async closeWorkspacePages(workspaceId: string) {
+    await this.ensureRuntimeBindingsLoaded();
+
+    const groupId = await this.validWorkspaceGroupId(workspaceId);
+    if (groupId === undefined) return;
+
+    const tabs = await chrome.tabs.query({ groupId });
+    const tabIds = tabs.flatMap((tab) => (tab.id ? [tab.id] : []));
+    if (tabIds.length === 0) return;
+
+    await chrome.tabs.remove(tabIds as [number, ...number[]]);
+    tabIds.forEach((tabId) => {
+      this.chromeTabBookmarkIds.delete(tabId);
+      this.removeWorkspacePageOrder(`chrome-tab:${tabId}`, false);
+    });
+    void this.persistRuntimeBindings();
+  }
+
   async restorePinnedPage(bookmarkId: string, chromeTabId?: number) {
     await this.ensureRuntimeBindingsLoaded();
 

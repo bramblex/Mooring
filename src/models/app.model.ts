@@ -44,6 +44,10 @@ type AppMessage =
         workspaceId: string;
     }
     | {
+        type: "CLOSE_WORKSPACE_PAGES";
+        workspaceId: string;
+    }
+    | {
         type: "OPEN_WORKSPACE_PAGE";
         workspaceId: string;
         pageId: string;
@@ -263,6 +267,9 @@ export class AppModel {
                 return { ok: true };
             case "DELETE_WORKSPACE":
                 await this.workspace.deleteWorkspace(message.workspaceId);
+                return { ok: true };
+            case "CLOSE_WORKSPACE_PAGES":
+                await this.workspace.closeWorkspacePages(message.workspaceId);
                 return { ok: true };
             case "OPEN_WORKSPACE_PAGE":
                 if (!message.windowId) return { ok: false };
