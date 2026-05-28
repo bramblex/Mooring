@@ -27,7 +27,7 @@ Mooring does not execute remote code. All extension code is packaged with the ex
 
 ## Open Source
 
-The source code for Mooring is publicly available at https://github.com/qjnight/Mooring so users and reviewers can inspect how the extension handles data.
+The source code for Mooring is publicly available at https://github.com/bramblex/Mooring so users and reviewers can inspect how the extension handles data.
 
 ## Data Storage
 

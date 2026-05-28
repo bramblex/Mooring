@@ -1,118 +1,28 @@
 import type { PageModel } from "./page.model";
-
-export type TabGroupColor = chrome.tabGroups.TabGroup["color"];
-
-export type WorkspaceView = {
-  id: string;
-  name: string;
-  color: TabGroupColor;
-  order: number;
-  collapsed: boolean;
-  groupId?: number;
-  pages: PageModel[];
-};
-
-export type WorkspaceState = {
-  workspaces: WorkspaceView[];
-  unmanagedPages: PageModel[];
-  unmanagedGroups: UnmanagedGroupView[];
-};
-
-export type UnmanagedGroupView = {
-  id: number;
-  title: string;
-  color: TabGroupColor;
-  collapsed: boolean;
-  order: number;
-  pages: PageModel[];
-};
-
-type ParsedWorkspaceTitle = {
-  name: string;
-  color: TabGroupColor;
-  collapsed: boolean;
-};
-
-type WorkspaceFolder = ParsedWorkspaceTitle & {
-  id: string;
-  index: number;
-};
-
-const ROOT_FOLDER_TITLE = "Mooring Workspace";
-const LEGACY_ROOT_FOLDER_TITLE = "Harbor Workspace";
-const DEFAULT_WORKSPACE_NAME = "Untitled workspace";
-const DEFAULT_WORKSPACE_COLOR: TabGroupColor = "grey";
-const NO_GROUP = chrome.tabGroups.TAB_GROUP_ID_NONE;
-const WORKSPACE_TITLE_RE = /^\[(grey|blue|red|yellow|green|pink|purple|cyan|orange)(?::(shown|hidden))?\]\s*(.*)$/;
-
-const BOOKMARK_BAR_ID = "1";
-const RUNTIME_BINDINGS_STORAGE_KEY = "mooringRuntimeBindings";
-const WORKSPACE_NAME_RE = /^Workspace (\d+)$/;
-
-type RuntimeBindingsStorage = {
-  workspaceGroupIds?: Array<[string, number]>;
-  chromeTabBookmarkIds?: Array<[number, string]>;
-  workspacePageOrders?: Array<[string, string[]]>;
-  workspaceTempPageOrders?: Array<[string, number[]]>;
-};
-
-function parseWorkspaceTitle(title: string): ParsedWorkspaceTitle {
-  const match = title.match(WORKSPACE_TITLE_RE);
-
-  if (!match) {
-    return {
-      name: title || DEFAULT_WORKSPACE_NAME,
-      color: DEFAULT_WORKSPACE_COLOR,
-      collapsed: false,
-    };
-  }
-
-  return {
-    color: match[1] as TabGroupColor,
-    collapsed: match[2] === "hidden",
-    name: match[3] || DEFAULT_WORKSPACE_NAME,
-  };
-}
-
-function formatWorkspaceTitle(name: string, color: TabGroupColor, collapsed = false) {
-  const state = collapsed ? ":hidden" : "";
-  return `[${color}${state}] ${name.trim() || DEFAULT_WORKSPACE_NAME}`;
-}
-
-function chromeTabTitle(tab: chrome.tabs.Tab) {
-  return tab.title || tab.url || "Untitled page";
-}
-
-function bookmarkTitle(bookmark: chrome.bookmarks.BookmarkTreeNode) {
-  return bookmark.title || bookmark.url || "Untitled page";
-}
-
-function chromeTabUrl(tab: chrome.tabs.Tab) {
-  return tab.url || tab.pendingUrl || "";
-}
-
-function bookmarkKey(bookmark: chrome.bookmarks.BookmarkTreeNode) {
-  return bookmark.url || "";
-}
-
-function canBookmarkTab(tab: chrome.tabs.Tab) {
-  const url = chromeTabUrl(tab);
-  return Boolean(url && !url.startsWith("chrome://") && !url.startsWith("chrome-extension://"));
-}
-
-function nextWorkspaceName(folders: WorkspaceFolder[]) {
-  const usedNumbers = new Set(
-    folders
-      .map((folder) => folder.name.match(WORKSPACE_NAME_RE)?.[1])
-      .filter((value): value is string => Boolean(value))
-      .map((value) => Number(value)),
-  );
-
-  let index = 1;
-  while (usedNumbers.has(index)) index += 1;
-
-  return `Workspace ${index}`;
-}
+import {
+  DEFAULT_WORKSPACE_COLOR,
+  NO_GROUP,
+  RUNTIME_BINDINGS_STORAGE_KEY,
+} from "./workspace.constants";
+import {
+  bookmarkKey,
+  canBookmarkTab,
+  chromeTabTitle,
+  chromeTabUrl,
+  formatWorkspaceTitle,
+  nextWorkspaceName,
+  parseWorkspaceTitle,
+} from "./workspace.helpers";
+import { ensureRootFolder, getWorkspaceFolder, listWorkspaceFolders } from "./workspace.bookmarks";
+import { parsePageId, pinnedPageModel, tempPageModel } from "./workspace.page-factory";
+import type {
+  RuntimeBindingsStorage,
+  TabGroupColor,
+  UnmanagedGroupView,
+  WorkspaceFolder,
+  WorkspaceState,
+} from "./workspace.types";
+export type { TabGroupColor, UnmanagedGroupView, WorkspaceState, WorkspaceView } from "./workspace.types";
 
 export class WorkspaceModel {
   private workspaceGroupIds = new Map<string, number>();
@@ -139,7 +49,7 @@ export class WorkspaceModel {
   async getState(windowId: number): Promise<WorkspaceState> {
     await this.ensureRuntimeBindingsLoaded();
 
-    const root = await this.ensureRootFolder();
+    const root = await ensureRootFolder();
     let groups = await chrome.tabGroups.query({ windowId });
     let tabs = await chrome.tabs.query({ windowId });
 
@@ -152,7 +62,7 @@ export class WorkspaceModel {
       tabs = await chrome.tabs.query({ windowId });
     }
 
-    const freshFolders = await this.listWorkspaceFolders(root.id);
+    const freshFolders = await listWorkspaceFolders(root.id);
 
     this.pruneBindings(groups);
     this.bindKnownGroups(freshFolders, groups);
@@ -204,7 +114,7 @@ export class WorkspaceModel {
               color: group.color,
               collapsed: group.collapsed,
               order: groupTabs[0]?.index ?? Number.MAX_SAFE_INTEGER,
-              pages: groupTabs.map((tab) => this.tempPageModel(tab, false)),
+              pages: groupTabs.map((tab) => tempPageModel(tab, false)),
             },
           };
         }),
@@ -216,7 +126,7 @@ export class WorkspaceModel {
     const unmanagedPages = tabs
       .filter((tab) => tab.groupId === NO_GROUP)
       .sort((a, b) => a.index - b.index)
-      .map((tab) => this.tempPageModel(tab, false));
+      .map((tab) => tempPageModel(tab, false));
 
     return {
       workspaces,
@@ -228,8 +138,8 @@ export class WorkspaceModel {
   async createWorkspace(windowId: number) {
     await this.ensureRuntimeBindingsLoaded();
 
-    const root = await this.ensureRootFolder();
-    const folders = await this.listWorkspaceFolders(root.id);
+    const root = await ensureRootFolder();
+    const folders = await listWorkspaceFolders(root.id);
     const folder = await chrome.bookmarks.create({
       parentId: root.id,
       title: formatWorkspaceTitle(nextWorkspaceName(folders), DEFAULT_WORKSPACE_COLOR, false),
@@ -249,7 +159,7 @@ export class WorkspaceModel {
     const nextName = name.trim();
     if (!nextName) return;
 
-    const folder = await this.getWorkspaceFolder(workspaceId);
+    const folder = await getWorkspaceFolder(workspaceId);
     const parsed = parseWorkspaceTitle(folder.title);
 
     await chrome.bookmarks.update(workspaceId, {
@@ -265,7 +175,7 @@ export class WorkspaceModel {
   async updateWorkspaceColor(workspaceId: string, color: TabGroupColor) {
     await this.ensureRuntimeBindingsLoaded();
 
-    const folder = await this.getWorkspaceFolder(workspaceId);
+    const folder = await getWorkspaceFolder(workspaceId);
     const parsed = parseWorkspaceTitle(folder.title);
 
     await chrome.bookmarks.update(workspaceId, {
@@ -281,7 +191,7 @@ export class WorkspaceModel {
   async toggleWorkspace(workspaceId: string) {
     await this.ensureRuntimeBindingsLoaded();
 
-    const folder = await this.getWorkspaceFolder(workspaceId);
+    const folder = await getWorkspaceFolder(workspaceId);
     const parsed = parseWorkspaceTitle(folder.title);
     const collapsed = !parsed.collapsed;
 
@@ -363,7 +273,7 @@ export class WorkspaceModel {
     const chromeIndex = this.chromeInsertionIndex(items, targetIndex);
 
     if (itemType === "page") {
-      const parsedId = this.parsePageId(String(itemId));
+      const parsedId = parsePageId(String(itemId));
       if (!parsedId.chromeTabId) return;
 
       await chrome.tabs.ungroup(parsedId.chromeTabId);
@@ -382,7 +292,7 @@ export class WorkspaceModel {
 
     if (this.groupWorkspaceIds.has(groupId)) return;
 
-    const parsedId = this.parsePageId(pageId);
+    const parsedId = parsePageId(pageId);
     if (!parsedId.chromeTabId) return;
 
     const targetTabs = (await chrome.tabs.query({ groupId }))
@@ -431,7 +341,7 @@ export class WorkspaceModel {
   ) {
     await this.ensureRuntimeBindingsLoaded();
 
-    const parsedId = this.parsePageId(pageId);
+    const parsedId = parsePageId(pageId);
     const bookmarkId = parsedId.bookmarkId;
 
     const existingChromeTabId = preferredChromeTabId || parsedId.chromeTabId;
@@ -580,7 +490,7 @@ export class WorkspaceModel {
   async movePageToWorkspace(pageId: string, workspaceId: string | null, index: number, windowId: number) {
     await this.ensureRuntimeBindingsLoaded();
 
-    const parsedId = this.parsePageId(pageId);
+    const parsedId = parsePageId(pageId);
     const bookmarkId = parsedId.bookmarkId
       || (parsedId.chromeTabId ? this.chromeTabBookmarkIds.get(parsedId.chromeTabId) : undefined);
     const openChromeTabId = parsedId.chromeTabId
@@ -625,8 +535,8 @@ export class WorkspaceModel {
   async moveWorkspace(sourceWorkspaceId: string, index: number) {
     await this.ensureRuntimeBindingsLoaded();
 
-    const root = await this.ensureRootFolder();
-    const folders = await this.listWorkspaceFolders(root.id);
+    const root = await ensureRootFolder();
+    const folders = await listWorkspaceFolders(root.id);
     const sourceFolder = folders.find((folder) => folder.id === sourceWorkspaceId);
     if (!sourceFolder) return;
 
@@ -645,27 +555,6 @@ export class WorkspaceModel {
     }
 
     await chrome.bookmarks.move(sourceWorkspaceId, destination);
-  }
-
-  private async ensureRootFolder() {
-    const [root] = await chrome.bookmarks.search({ title: ROOT_FOLDER_TITLE });
-    if (root && !root.url) return root;
-
-    // Product rename: keep reading the old root so existing local users do not
-    // lose their bookmark-backed workspaces after upgrading from Harbor.
-    const [legacyRoot] = await chrome.bookmarks.search({ title: LEGACY_ROOT_FOLDER_TITLE });
-    if (legacyRoot && !legacyRoot.url) return legacyRoot;
-
-    try {
-      return await chrome.bookmarks.create({
-        parentId: BOOKMARK_BAR_ID,
-        title: ROOT_FOLDER_TITLE,
-      });
-    } catch {
-      return chrome.bookmarks.create({
-        title: ROOT_FOLDER_TITLE,
-      });
-    }
   }
 
   private async ensureRuntimeBindingsLoaded() {
@@ -702,26 +591,6 @@ export class WorkspaceModel {
     await chrome.storage.session.set({
       [RUNTIME_BINDINGS_STORAGE_KEY]: bindings,
     });
-  }
-
-  private async getWorkspaceFolder(workspaceId: string) {
-    const [folder] = await chrome.bookmarks.get(workspaceId);
-    if (!folder) {
-      throw new Error(`Workspace folder not found: ${workspaceId}`);
-    }
-    return folder;
-  }
-
-  private async listWorkspaceFolders(rootId: string): Promise<WorkspaceFolder[]> {
-    const children = await chrome.bookmarks.getChildren(rootId);
-
-    return children
-      .filter((node) => !node.url)
-      .map((node, index) => ({
-        ...parseWorkspaceTitle(node.title),
-        id: node.id,
-        index,
-      }));
   }
 
   private clearRuntimeBindingsWithoutCleanup() {
@@ -853,12 +722,12 @@ export class WorkspaceModel {
       const tab = tabsByBookmarkId.get(bookmark.id);
       if (tab?.id) usedTabIds.add(tab.id);
 
-      return this.pinnedPageModel(bookmark, tab, index);
+      return pinnedPageModel(bookmark, tab, index);
     });
 
     const tempPages = openTabs
       .filter((tab) => tab.id && !usedTabIds.has(tab.id))
-      .map((tab) => this.tempPageModel(tab, false));
+      .map((tab) => tempPageModel(tab, false));
     const pages = [...pinnedTabs, ...tempPages];
     const order = this.reconcileWorkspacePageOrder(workspaceId, pages.map((page) => page.id));
 
@@ -870,63 +739,6 @@ export class WorkspaceModel {
         ...page,
         order: index,
       }));
-  }
-
-  private pinnedPageModel(
-    bookmark: chrome.bookmarks.BookmarkTreeNode,
-    tab: chrome.tabs.Tab | undefined,
-    index: number,
-  ): PageModel {
-    const openUrl = tab ? chromeTabUrl(tab) : "";
-    const dirty = Boolean(tab && bookmark.url && openUrl && bookmark.url !== openUrl);
-
-    return {
-      id: `bookmark:${bookmark.id}`,
-      kind: "pinned",
-      title: bookmarkTitle(bookmark),
-      currentTitle: dirty && tab ? chromeTabTitle(tab) : undefined,
-      url: bookmark.url,
-      favIconUrl: tab?.favIconUrl,
-      active: Boolean(tab?.active),
-      order: index,
-      pinned: true,
-      dirty,
-      open: Boolean(tab),
-      chromeTabId: tab?.id,
-      bookmarkId: bookmark.id,
-    };
-  }
-
-  private tempPageModel(tab: chrome.tabs.Tab, pinned: boolean): PageModel {
-    return {
-      id: `chrome-tab:${tab.id}`,
-      kind: "temp",
-      title: chromeTabTitle(tab),
-      url: chromeTabUrl(tab),
-      favIconUrl: tab.favIconUrl,
-      active: Boolean(tab.active),
-      order: tab.index,
-      pinned,
-      dirty: false,
-      open: true,
-      chromeTabId: tab.id,
-    };
-  }
-
-  private parsePageId(id: string) {
-    if (id.startsWith("chrome-tab:")) {
-      return {
-        chromeTabId: Number(id.replace("chrome-tab:", "")),
-      };
-    }
-
-    if (id.startsWith("bookmark:")) {
-      return {
-        bookmarkId: id.replace("bookmark:", ""),
-      };
-    }
-
-    return {};
   }
 
   private async chromeTabExists(tabId: number) {
@@ -962,7 +774,7 @@ export class WorkspaceModel {
       return existingGroupId;
     }
 
-    const folder = await this.getWorkspaceFolder(workspaceId);
+    const folder = await getWorkspaceFolder(workspaceId);
     const parsed = parseWorkspaceTitle(folder.title);
     const groupId = await chrome.tabs.group({ tabIds: seedTabId });
     await chrome.tabGroups.update(groupId, {
@@ -1015,7 +827,7 @@ export class WorkspaceModel {
     const tabs = await chrome.tabs.query({ windowId });
     const managedGroupIds = new Set(this.workspaceGroupIds.values());
     const movingTabId = movingType === "page"
-      ? this.parsePageId(String(movingId)).chromeTabId
+      ? parsePageId(String(movingId)).chromeTabId
       : undefined;
     const movingGroupId = movingType === "group" ? Number(movingId) : undefined;
 
