@@ -91,14 +91,15 @@ export class WorkspaceModel {
     return workspaces;
   }
 
-  async createWorkspace(windowId: number) {
+  async createWorkspace(windowId: number, name?: string, color: TabGroupColor = DEFAULT_WORKSPACE_COLOR) {
     await this.runtime.ensureLoaded();
 
     const root = await ensureRootFolder();
     const folders = await listWorkspaceFolders(root.id);
+    const title = name?.trim() || nextWorkspaceName(folders);
     const folder = await chrome.bookmarks.create({
       parentId: root.id,
-      title: formatWorkspaceTitle(nextWorkspaceName(folders), DEFAULT_WORKSPACE_COLOR, false),
+      title: formatWorkspaceTitle(title, color, false),
     });
 
     // docs/workspace-model.md: 创建空 Workspace 只创建 Bookmark 文件夹，

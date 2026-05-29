@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import type { AiAction } from "../models/ai-action.model";
+import type { AiActionPreview } from "../models/ai-action.model";
+import { enrichAiActionsForPrompt, validateAiActionPlan } from "../models/ai-action.model";
 import { useI18n } from "../i18n";
 import type { PageModel } from "../models/page.model";
 import type { WindowContext } from "../models/window.model";
@@ -18,6 +21,17 @@ import UnmanagedSection from "./components/UnmanagedSection.vue";
 import WorkspaceSection from "./components/WorkspaceSection.vue";
 import WorkspaceNavigator from "./components/WorkspaceNavigator.vue";
 import { GROUP_COLORS, groupColorStyle } from "./groupColors";
+import {
+  buildAiRequestPreview,
+  DEFAULT_AI_CONFIG,
+  generateAiActionPlan,
+  loadAiPromptHistory,
+  loadAiProviderConfig,
+  saveAiPromptHistory,
+  saveAiProviderConfig,
+  type AiProviderConfig,
+} from "./ai/deepseek";
+import AiActionDock from "./components/AiActionDock.vue";
 
 const workspaceState = ref<WorkspaceState>({
   workspaces: [],
@@ -32,6 +46,15 @@ const pageTitleInputs = ref<Record<string, HTMLInputElement | null>>({});
 const workspaceSectionElements = ref<Record<string, HTMLElement | null>>({});
 const windowContext = ref<WindowContext | null>(null);
 const currentWindowId = ref<number | undefined>();
+const isAiDockOpen = ref(false);
+const aiPrompt = ref("");
+const aiConfig = ref<AiProviderConfig>({ ...DEFAULT_AI_CONFIG });
+const aiPreview = ref<AiActionPreview[]>([]);
+const aiActions = ref<AiAction[]>([]);
+const aiError = ref("");
+const aiLoading = ref(false);
+const aiPromptHistory = ref<string[]>([]);
+const aiPromptHistoryIndex = ref(-1);
 const { t } = useI18n();
 const { confirmDialog, requestConfirm, closeConfirmDialog } = useConfirmDialog();
 const { pageTitle, pageSubtitle, pageFavicon } = usePageDisplay(t);
@@ -40,6 +63,17 @@ let scheduledRefreshId: number | undefined;
 
 const isPrimaryWindow = computed(() => windowContext.value?.role === "primary");
 const isWindowContextReady = computed(() => Boolean(windowContext.value));
+const aiPromptPreview = computed(() => JSON.stringify(
+  buildAiRequestPreview(aiConfig.value, workspaceState.value, aiPrompt.value.trim()),
+  null,
+  2,
+));
+const localizedAiPreview = computed(() =>
+  aiPreview.value.map((item) => ({
+    text: aiPreviewText(item),
+    risk: item.risk,
+  })),
+);
 const workspaces = computed(() =>
   [...workspaceState.value.workspaces].sort((a, b) => a.order - b.order),
 );
@@ -411,6 +445,139 @@ const {
   isEditingWorkspace,
 });
 
+async function toggleAiDock() {
+  if (isAiDockOpen.value) {
+    closeAiDock();
+    return;
+  }
+
+  aiConfig.value = await loadAiProviderConfig();
+  aiPromptHistory.value = await loadAiPromptHistory();
+  aiPromptHistoryIndex.value = -1;
+  aiError.value = "";
+  aiPreview.value = [];
+  aiActions.value = [];
+  isAiDockOpen.value = true;
+}
+
+function closeAiDock() {
+  isAiDockOpen.value = false;
+  aiError.value = "";
+  aiLoading.value = false;
+}
+
+async function saveAiSettings() {
+  await saveAiProviderConfig(aiConfig.value);
+}
+
+async function generateAiPlan() {
+  if (!aiPrompt.value.trim()) {
+    aiError.value = t("aiPromptRequired");
+    return;
+  }
+  if (!aiConfig.value.apiKey.trim()) {
+    aiError.value = t("aiApiKeyRequired");
+    return;
+  }
+
+  aiLoading.value = true;
+  aiError.value = "";
+  aiPreview.value = [];
+  aiActions.value = [];
+
+  try {
+    await saveAiProviderConfig(aiConfig.value);
+    const prompt = aiPrompt.value.trim();
+    aiPromptHistory.value = await saveAiPromptHistory(prompt);
+    aiPromptHistoryIndex.value = -1;
+    const plan = await generateAiActionPlan(aiConfig.value, workspaceState.value, prompt);
+    const validation = validateAiActionPlan(plan, workspaceState.value);
+    if (!validation.ok) {
+      aiError.value = validation.error;
+      return;
+    }
+
+    const enriched = enrichAiActionsForPrompt(
+      validation.actions,
+      workspaceState.value,
+      prompt,
+    );
+
+    aiActions.value = enriched.actions;
+    aiPreview.value = [...validation.preview, ...enriched.preview].length
+      ? [...validation.preview, ...enriched.preview]
+      : [{ type: "no_actions", risk: "normal" }];
+    aiPrompt.value = "";
+  } catch (error) {
+    aiError.value = error instanceof Error ? error.message : t("aiRequestFailed");
+  } finally {
+    aiLoading.value = false;
+  }
+}
+
+function aiPreviewText(item: AiActionPreview) {
+  switch (item.type) {
+    case "rename_workspace":
+      return t("aiPreviewRenameWorkspace", item.values);
+    case "create_workspace":
+      return t("aiPreviewCreateWorkspace", item.values);
+    case "move_page":
+      return t("aiPreviewMovePage", item.values);
+    case "pin_page":
+      return item.values?.workspace
+        ? t("aiPreviewPinPage", item.values)
+        : t("aiPreviewPinPageNoWorkspace", item.values);
+    case "unpin_page":
+      return t("aiPreviewUnpinPage", item.values);
+    case "close_page":
+      return t("aiPreviewClosePage", item.values);
+    case "delete_workspace":
+      return t("aiPreviewDeleteWorkspace", item.values);
+    case "close_workspace_pages":
+      return t("aiPreviewCloseWorkspacePages", item.values);
+    case "rename_page":
+      return t("aiPreviewRenamePage", item.values);
+    case "no_actions":
+      return t("aiNoActions");
+  }
+}
+
+function selectAiPromptHistory(offset: number) {
+  if (aiPromptHistory.value.length === 0) return;
+
+  const nextIndex = Math.max(
+    -1,
+    Math.min(aiPromptHistoryIndex.value + offset, aiPromptHistory.value.length - 1),
+  );
+  aiPromptHistoryIndex.value = nextIndex;
+  aiPrompt.value = nextIndex === -1 ? "" : aiPromptHistory.value[nextIndex];
+}
+
+async function applyAiPlan() {
+  if (currentWindowId.value === undefined || aiActions.value.length === 0) return;
+
+  aiLoading.value = true;
+  aiError.value = "";
+  try {
+    const response = await sendMessage<{ ok?: boolean; error?: string }>({
+      type: "APPLY_AI_ACTIONS",
+      windowId: currentWindowId.value,
+      actions: aiActions.value,
+    });
+    if (response?.ok === false) {
+      aiError.value = response.error || t("aiApplyFailed");
+      return;
+    }
+    aiPreview.value = [];
+    aiActions.value = [];
+    await refreshTabs();
+  } catch (error) {
+    aiError.value = error instanceof Error ? error.message : t("aiApplyFailed");
+  } finally {
+    aiLoading.value = false;
+  }
+}
+
 onMounted(async () => {
   await refreshAll();
 
@@ -661,6 +828,40 @@ onUnmounted(() => {
       :new-workspace-label="t('newWorkspace')"
       @create-page="createPage"
       @create-workspace="createWorkspace"
+    />
+
+    <AiActionDock
+      v-model:config="aiConfig"
+      v-model:prompt="aiPrompt"
+      :open="isAiDockOpen"
+      :preview="localizedAiPreview"
+      :error="aiError"
+      :loading="aiLoading"
+      :has-plan="aiActions.length > 0"
+      :prompt-preview="aiPromptPreview"
+      :labels="{
+        title: t('aiAction'),
+        prompt: t('aiPromptPlaceholder'),
+        apiStyle: t('aiApiStyle'),
+        openAiStyle: t('aiApiStyleOpenAi'),
+        anthropicStyle: t('aiApiStyleAnthropic'),
+        baseUrl: t('aiBaseUrl'),
+        apiKey: t('aiApiKey'),
+        model: t('aiModel'),
+        save: t('save'),
+        apply: aiLoading ? t('aiApplying') : t('aiApply'),
+        cancel: t('cancel'),
+        confirm: t('confirm'),
+        settings: t('settings'),
+        promptInfo: t('aiPromptInfo'),
+      }"
+      @toggle="toggleAiDock"
+      @generate="generateAiPlan"
+      @apply="applyAiPlan"
+      @cancel="closeAiDock"
+      @save-settings="saveAiSettings"
+      @history-prev="selectAiPromptHistory(1)"
+      @history-next="selectAiPromptHistory(-1)"
     />
 
     <ConfirmDialog

@@ -8,6 +8,8 @@ Mooring does not collect, sell, share, or transmit user data to the developer or
 
 The extension uses Chrome extension APIs to access tab titles, tab URLs, tab group information, and user-created bookmarks only for the purpose of providing workspace organization features. This information is processed locally in the user's browser.
 
+If the user enables the optional AI Action feature and provides an AI provider API key, Mooring sends the user's one-time prompt and a structured summary of the current workspace state, including page titles and URLs, to the configured AI provider for the sole purpose of generating a proposed action plan. Mooring does not send this data to the developer.
+
 ## How Data Is Used
 
 Mooring uses tab and bookmark information to:
@@ -16,6 +18,7 @@ Mooring uses tab and bookmark information to:
 - Organize tabs into Chrome tab groups
 - Save user-selected workspace pages as Chrome bookmarks
 - Move tabs between temporary windows and the main workspace window
+- Generate an optional AI action plan when the user explicitly requests it
 
 ## Data Sharing
 

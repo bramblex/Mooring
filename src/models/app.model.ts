@@ -1,3 +1,4 @@
+import type { AiAction } from "./ai-action.model";
 import { WindowModel, type WindowContext, type WindowRole } from "./window.model";
 import { UnmanagedModel } from "./unmanaged.model";
 import { WorkspaceModel, type TabGroupColor } from "./workspace.model";
@@ -128,6 +129,11 @@ type AppMessage =
         groupId: number;
         workspaceId: string;
         index: number;
+    }
+    | {
+        type: "APPLY_AI_ACTIONS";
+        windowId?: number;
+        actions: AiAction[];
     };
 
 export class AppModel {
@@ -260,6 +266,87 @@ export class AppModel {
         };
     }
 
+    async applyAiActions(windowId: number, actions: AiAction[]) {
+        const createdWorkspaceIds = new Map<string, string>();
+
+        for (const action of actions) {
+            switch (action.type) {
+                case "rename_workspace":
+                    await this.workspace.renameWorkspace(action.workspaceId, action.name);
+                    break;
+                case "create_workspace":
+                    {
+                        const workspaceId = await this.workspace.createWorkspace(windowId, action.name, action.color);
+                        if (action.workspaceRef) {
+                            createdWorkspaceIds.set(action.workspaceRef, workspaceId);
+                        }
+                    }
+                    break;
+                case "move_page":
+                    await this.workspace.pages.movePageToWorkspace(
+                        action.pageId,
+                        createdWorkspaceIds.get(action.toWorkspaceId) || action.toWorkspaceId,
+                        action.index ?? Number.MAX_SAFE_INTEGER,
+                        windowId,
+                    );
+                    break;
+                case "pin_page": {
+                    const chromeTabId = this.chromeTabIdFromPageId(action.pageId);
+                    const workspaceId = createdWorkspaceIds.get(action.workspaceId) || action.workspaceId;
+                    if (chromeTabId === undefined) break;
+
+                    await this.workspace.pages.pinPage(workspaceId, chromeTabId);
+                    break;
+                }
+                case "unpin_page": {
+                    const state = await this.getWorkspaceState(windowId);
+                    const page = this.findPageInState(state, action.pageId);
+                    if (!page?.bookmarkId) break;
+
+                    await this.workspace.pages.unpinPage(page.chromeTabId, page.bookmarkId);
+                    break;
+                }
+                case "close_page": {
+                    const state = await this.getWorkspaceState(windowId);
+                    const page = this.findPageInState(state, action.pageId);
+                    if (!page?.chromeTabId) break;
+
+                    await this.workspace.pages.closeWorkspacePage(page.chromeTabId);
+                    break;
+                }
+                case "delete_workspace":
+                    await this.workspace.deleteWorkspace(action.workspaceId);
+                    break;
+                case "close_workspace_pages":
+                    await this.workspace.closeWorkspacePages(action.workspaceId);
+                    break;
+                case "rename_page": {
+                    const state = await this.getWorkspaceState(windowId);
+                    const page = this.findPageInState(state, action.pageId);
+                    if (!page?.bookmarkId) break;
+
+                    await this.workspace.pages.updatePinnedPageTitle(page.bookmarkId, action.title);
+                    break;
+                }
+            }
+        }
+    }
+
+    private findPageInState(state: Awaited<ReturnType<AppModel["getWorkspaceState"]>>, pageId: string) {
+        return [
+            ...state.unmanagedPages,
+            ...state.unmanagedGroups.flatMap((group) => group.pages),
+            ...state.workspaces.flatMap((workspace) => workspace.pages),
+        ].find((page) => page.id === pageId);
+    }
+
+    private chromeTabIdFromPageId(pageId: string) {
+        if (!pageId.startsWith("chrome-tab:")) return undefined;
+
+        const tabId = Number(pageId.replace("chrome-tab:", ""));
+        return Number.isFinite(tabId) ? tabId : undefined;
+    }
+
     start() {
         this.initialize();
 
@@ -286,7 +373,14 @@ export class AppModel {
         });
 
         chrome.runtime.onMessage.addListener((message: AppMessage, _sender, sendResponse) => {
-            this.handleMessage(message).then(sendResponse);
+            this.handleMessage(message)
+                .then(sendResponse)
+                .catch((error) => {
+                    sendResponse({
+                        ok: false,
+                        error: error instanceof Error ? error.message : "Unexpected service worker error.",
+                    });
+                });
             return true;
         });
     }
@@ -393,6 +487,10 @@ export class AppModel {
                     message.workspaceId,
                     message.index,
                 );
+                return { ok: true };
+            case "APPLY_AI_ACTIONS":
+                if (!message.windowId) return { ok: false };
+                await this.applyAiActions(message.windowId, message.actions);
                 return { ok: true };
             default:
                 return { ok: false };
