@@ -115,6 +115,10 @@ export function useSidepanelDrag({
     return `workspace-nav-${workspaceId}`;
   }
 
+  function workspaceNavGapKey(index: number) {
+    return `workspace-nav-gap-${index}`;
+  }
+
   function tempNavKey() {
     return "workspace-nav-temp";
   }
@@ -489,6 +493,56 @@ export function useSidepanelDrag({
     await refreshTabs();
   }
 
+  function onWorkspaceNavGapDragOver(index: number, event: DragEvent) {
+    if (!canDropWorkspaceAt(index)) {
+      dragOverKey.value = "";
+      return;
+    }
+
+    onDragOver(workspaceNavGapKey(index), event);
+  }
+
+  async function onWorkspaceNavGapDrop(index: number, event: DragEvent) {
+    if (!canDropWorkspaceAt(index)) return;
+
+    await onWorkspaceDrop(index, event);
+  }
+
+  function workspaceNavDropIndexFromEvent(targetIndex: number, event: DragEvent) {
+    const target = event.currentTarget as HTMLElement;
+    const rect = target.getBoundingClientRect();
+    const shouldInsertAfter = event.clientX > rect.left + rect.width / 2;
+
+    return shouldInsertAfter ? targetIndex + 1 : targetIndex;
+  }
+
+  function onWorkspaceNavItemDragOver(workspace: WorkspaceView, targetIndex: number, event: DragEvent) {
+    if (draggedWorkspaceId.value !== null && draggedPageId.value === null && draggedUnmanagedGroupId.value === null) {
+      const index = workspaceNavDropIndexFromEvent(targetIndex, event);
+      if (!canDropWorkspaceAt(index)) {
+        dragOverKey.value = "";
+        return;
+      }
+
+      onDragOver(workspaceNavGapKey(index), event);
+      return;
+    }
+
+    onWorkspaceNavDragOver(workspace, event);
+  }
+
+  async function onWorkspaceNavItemDrop(workspace: WorkspaceView, targetIndex: number, event: DragEvent) {
+    if (draggedWorkspaceId.value !== null && draggedPageId.value === null && draggedUnmanagedGroupId.value === null) {
+      const index = workspaceNavDropIndexFromEvent(targetIndex, event);
+      if (!canDropWorkspaceAt(index)) return;
+
+      await onWorkspaceDrop(index, event);
+      return;
+    }
+
+    await onWorkspaceNavDrop(workspace, event);
+  }
+
   function onDragEnd() {
     draggedPageId.value = null;
     draggedPagePinned.value = false;
@@ -507,6 +561,7 @@ export function useSidepanelDrag({
     unmanagedTopGapKey,
     unmanagedGroupPageGapKey,
     workspaceNavKey,
+    workspaceNavGapKey,
     tempNavKey,
     workspaceGapKey,
     onPageDragStart,
@@ -522,6 +577,10 @@ export function useSidepanelDrag({
     onPageGapDrop,
     onWorkspaceNavDragOver,
     onWorkspaceNavDrop,
+    onWorkspaceNavGapDragOver,
+    onWorkspaceNavGapDrop,
+    onWorkspaceNavItemDragOver,
+    onWorkspaceNavItemDrop,
     onTempNavDragOver,
     onTempNavDrop,
     onUnmanagedTopGapDragOver,

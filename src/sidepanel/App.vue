@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Plus } from "@lucide/vue";
+import { FilePlus, Plus } from "@lucide/vue";
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "../i18n";
 import type { PageModel } from "../models/page.model";
@@ -193,6 +193,13 @@ async function createWorkspace() {
   if (currentWindowId.value === undefined) return;
 
   await sendMessage({ type: "CREATE_WORKSPACE", windowId: currentWindowId.value });
+  await refreshTabs();
+}
+
+async function createPage() {
+  if (currentWindowId.value === undefined) return;
+
+  await sendMessage({ type: "CREATE_PAGE", windowId: currentWindowId.value });
   await refreshTabs();
 }
 
@@ -412,6 +419,7 @@ const {
   unmanagedTopGapKey,
   unmanagedGroupPageGapKey,
   workspaceNavKey,
+  workspaceNavGapKey,
   tempNavKey,
   workspaceGapKey,
   onPageDragStart,
@@ -427,6 +435,10 @@ const {
   onPageGapDrop,
   onWorkspaceNavDragOver,
   onWorkspaceNavDrop,
+  onWorkspaceNavGapDragOver,
+  onWorkspaceNavGapDrop,
+  onWorkspaceNavItemDragOver,
+  onWorkspaceNavItemDrop,
   onTempNavDragOver,
   onTempNavDrop,
   onUnmanagedTopGapDragOver,
@@ -557,12 +569,18 @@ onUnmounted(() => {
       :temp-count="unmanagedOpenPageCount()"
       :group-color-style="groupColorStyle"
       :workspace-nav-key="workspaceNavKey"
+      :workspace-nav-gap-key="workspaceNavGapKey"
       :temp-nav-key="tempNavKey"
       :workspace-open-page-count="workspaceOpenPageCount"
       @workspace-click="scrollToWorkspace"
-      @workspace-dragover="onWorkspaceNavDragOver"
+      @workspace-dragstart="onWorkspaceDragStart"
+      @dragend="onDragEnd"
+      @workspace-nav-gap-dragover="onWorkspaceNavGapDragOver"
+      @workspace-nav-gap-dragleave="onDragLeave"
+      @workspace-nav-gap-drop="onWorkspaceNavGapDrop"
+      @workspace-dragover="onWorkspaceNavItemDragOver"
       @workspace-dragleave="onDragLeave"
-      @workspace-drop="onWorkspaceNavDrop"
+      @workspace-drop="onWorkspaceNavItemDrop"
       @temp-click="scrollToUnmanaged"
       @temp-dragover="onTempNavDragOver"
       @temp-dragleave="onDragLeave"
@@ -692,15 +710,26 @@ onUnmounted(() => {
       />
     </section>
 
-    <button
-      class="icon-button floating-create-button"
-      type="button"
-      :title="t('newWorkspace')"
-      :aria-label="t('newWorkspace')"
-      @click="createWorkspace"
-    >
-      <Plus :size="22" aria-hidden="true" />
-    </button>
+    <div class="floating-actions" :aria-label="t('newWorkspace')">
+      <button
+        class="icon-button floating-create-button"
+        type="button"
+        :title="t('newPage')"
+        :aria-label="t('newPage')"
+        @click="createPage"
+      >
+        <FilePlus :size="21" aria-hidden="true" />
+      </button>
+      <button
+        class="icon-button floating-create-button primary"
+        type="button"
+        :title="t('newWorkspace')"
+        :aria-label="t('newWorkspace')"
+        @click="createWorkspace"
+      >
+        <Plus :size="22" aria-hidden="true" />
+      </button>
+    </div>
 
     <ConfirmDialog
       v-if="confirmDialog"

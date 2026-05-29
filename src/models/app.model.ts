@@ -26,6 +26,10 @@ type AppMessage =
         windowId?: number;
     }
     | {
+        type: "CREATE_PAGE";
+        windowId?: number;
+    }
+    | {
         type: "RENAME_WORKSPACE";
         workspaceId: string;
         name: string;
@@ -284,6 +288,10 @@ export class AppModel {
             case "CREATE_WORKSPACE":
                 if (!message.windowId) return { ok: false };
                 await this.workspace.createWorkspace(message.windowId);
+                return { ok: true };
+            case "CREATE_PAGE":
+                if (!message.windowId) return { ok: false };
+                await this.workspace.createPage(message.windowId);
                 return { ok: true };
             case "RENAME_WORKSPACE":
                 await this.workspace.renameWorkspace(message.workspaceId, message.name);

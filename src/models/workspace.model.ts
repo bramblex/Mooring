@@ -151,6 +151,17 @@ export class WorkspaceModel {
     return folder.id;
   }
 
+  async createPage(windowId: number) {
+    await this.ensureRuntimeBindingsLoaded();
+
+    // docs/product-logic.md: Temp Page 是当前打开 Chrome Tab 的临时表达；
+    // 新建 Page 默认不写 bookmark，也不主动加入 Workspace Chrome Group。
+    await chrome.tabs.create({
+      windowId,
+      active: true,
+    });
+  }
+
   async renameWorkspace(workspaceId: string, name: string) {
     await this.ensureRuntimeBindingsLoaded();
 

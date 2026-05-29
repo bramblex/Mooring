@@ -9,15 +9,21 @@ const props = defineProps<{
   tempCount: number;
   groupColorStyle: (color: TabGroupColor) => Record<string, string>;
   workspaceNavKey: (workspaceId: string) => string;
+  workspaceNavGapKey: (index: number) => string;
   tempNavKey: () => string;
   workspaceOpenPageCount: (workspace: WorkspaceView) => number;
 }>();
 
 defineEmits<{
   workspaceClick: [workspaceId: string];
-  workspaceDragover: [workspace: WorkspaceView, event: DragEvent];
+  workspaceDragstart: [workspace: WorkspaceView, event: DragEvent];
+  dragend: [];
+  workspaceNavGapDragover: [index: number, event: DragEvent];
+  workspaceNavGapDragleave: [key: string];
+  workspaceNavGapDrop: [index: number, event: DragEvent];
+  workspaceDragover: [workspace: WorkspaceView, index: number, event: DragEvent];
   workspaceDragleave: [key: string];
-  workspaceDrop: [workspace: WorkspaceView, event: DragEvent];
+  workspaceDrop: [workspace: WorkspaceView, index: number, event: DragEvent];
   tempClick: [];
   tempDragover: [event: DragEvent];
   tempDragleave: [key: string];
@@ -31,23 +37,46 @@ defineEmits<{
     class="workspace-navigator"
     :aria-label="props.navLabel"
   >
-    <button
-      v-for="workspace in props.workspaces"
-      :key="workspace.id"
-      class="workspace-nav-item"
-      :class="{ active: props.dragOverKey === props.workspaceNavKey(workspace.id) }"
-      type="button"
-      :title="workspace.name"
-      :style="props.groupColorStyle(workspace.color)"
-      @click="$emit('workspaceClick', workspace.id)"
-      @dragover="$emit('workspaceDragover', workspace, $event)"
-      @dragleave="$emit('workspaceDragleave', props.workspaceNavKey(workspace.id))"
-      @drop="$emit('workspaceDrop', workspace, $event)"
-    >
-      <span class="color-dot" aria-hidden="true"></span>
-      <span>{{ workspace.name }}</span>
-      <span class="workspace-nav-count">{{ props.workspaceOpenPageCount(workspace) }}</span>
-    </button>
+    <template v-for="(workspace, workspaceIndex) in props.workspaces" :key="workspace.id">
+      <span
+        class="workspace-nav-drop-gap"
+        :class="{ active: props.dragOverKey === props.workspaceNavGapKey(workspaceIndex) }"
+        aria-hidden="true"
+        @dragover="$emit('workspaceNavGapDragover', workspaceIndex, $event)"
+        @dragleave="$emit('workspaceNavGapDragleave', props.workspaceNavGapKey(workspaceIndex))"
+        @drop="$emit('workspaceNavGapDrop', workspaceIndex, $event)"
+      ></span>
+      <button
+        class="workspace-nav-item"
+        :class="{ active: props.dragOverKey === props.workspaceNavKey(workspace.id) }"
+        type="button"
+        :title="workspace.name"
+        :style="props.groupColorStyle(workspace.color)"
+        draggable="true"
+        @click="$emit('workspaceClick', workspace.id)"
+        @dragstart="$emit('workspaceDragstart', workspace, $event)"
+        @dragend="$emit('dragend')"
+        @dragover="$emit('workspaceDragover', workspace, workspaceIndex, $event)"
+        @dragleave="
+          $emit('workspaceDragleave', props.workspaceNavKey(workspace.id));
+          $emit('workspaceNavGapDragleave', props.workspaceNavGapKey(workspaceIndex));
+          $emit('workspaceNavGapDragleave', props.workspaceNavGapKey(workspaceIndex + 1));
+        "
+        @drop="$emit('workspaceDrop', workspace, workspaceIndex, $event)"
+      >
+        <span class="color-dot" aria-hidden="true"></span>
+        <span>{{ workspace.name }}</span>
+        <span class="workspace-nav-count">{{ props.workspaceOpenPageCount(workspace) }}</span>
+      </button>
+    </template>
+    <span
+      class="workspace-nav-drop-gap"
+      :class="{ active: props.dragOverKey === props.workspaceNavGapKey(props.workspaces.length) }"
+      aria-hidden="true"
+      @dragover="$emit('workspaceNavGapDragover', props.workspaces.length, $event)"
+      @dragleave="$emit('workspaceNavGapDragleave', props.workspaceNavGapKey(props.workspaces.length))"
+      @drop="$emit('workspaceNavGapDrop', props.workspaces.length, $event)"
+    ></span>
     <button
       class="workspace-nav-item temp-nav-item"
       :class="{ active: props.dragOverKey === props.tempNavKey() }"

@@ -13,6 +13,14 @@
 - 不引入运行时 Vue template compiler，模板通过 Vite 构建。
 - 构建产物在 `dist/`，本地加载扩展时选择 `dist`。
 
+## UI 风格约定
+
+- 侧边栏空间紧张，新增操作入口优先保持轻量，不要把低频按钮塞进 Workspace header。
+- 按钮样式优先沿用现有全局 `button` / `.icon-button` 规则：32px 左右、6px 圆角、普通边框、普通背景、hover 时使用现有边框和背景变化。
+- 如果需要多个悬浮操作按钮，外层容器只负责定位和排列，不额外做卡片、玻璃拟态、重阴影、特殊背景或主次按钮外观。
+- 右下角悬浮操作区使用两个独立按钮的视觉，按钮之间用简单间距区分；不要做成独立 toolbar/card 风格。
+- 新增 icon-only 按钮必须有 `title` 和 `aria-label`，并保持中英文 i18n 文案同步。
+
 ## Model 边界
 
 - `AppModel` 是 service worker 侧的应用入口，负责注册 Chrome 事件和接收 side panel 消息。
