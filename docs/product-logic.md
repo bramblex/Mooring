@@ -30,6 +30,24 @@
 - Mooring 只在主窗口启用完整 Workspace / Page 管理。
 - 临时窗口只提供把 Chrome Tab 发送到主窗口的能力。
 
+## 实现模型边界
+
+产品概念在代码中对应为：
+
+- `AppModel`：service worker 侧应用协调器，接收 side panel message，组合各领域模型。
+- `WindowModel`：Chrome Window 角色和主窗口运行时状态。
+- `WorkspaceModel`：Workspace 容器、Bookmark folder、Workspace 排序、Workspace 与 Chrome Group 投影。
+- `WorkspacePageModel`：Workspace 内 Page 生命周期和 Page 排序。
+- `UnmanagedModel`：未管理 Chrome Tab / Chrome Group。
+- `WorkspaceRuntimeStore`：运行时绑定、`chrome.storage.session` 缓存和 Workspace Page runtime order。
+
+边界规则：
+
+- Workspace 容器逻辑不处理 unmanaged Chrome Group 的改名、改色、解散和 unmanaged 排序。
+- Page 生命周期逻辑不处理 Workspace folder 的创建、重命名、颜色和排序。
+- Unmanaged 逻辑不写 Bookmark，不创建 Workspace，不承担 Workspace 语义。
+- Runtime binding 不是长期状态，不能越过 `WorkspaceRuntimeStore` 变成散落的持久化逻辑。
+
 ## 窗口管理逻辑
 
 只有主窗口会被 Mooring 管理，其他窗口都是临时窗口。

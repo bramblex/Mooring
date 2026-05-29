@@ -1,19 +1,19 @@
 <script setup lang="ts">
-import { FilePlus, Plus } from "@lucide/vue";
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "../i18n";
 import type { PageModel } from "../models/page.model";
 import type { WindowContext } from "../models/window.model";
 import type {
   TabGroupColor,
-  UnmanagedGroupView,
   WorkspaceState,
   WorkspaceView,
 } from "../models/workspace.model";
 import { useConfirmDialog } from "./composables/useConfirmDialog";
 import { usePageDisplay } from "./composables/usePageDisplay";
 import { useSidepanelDrag } from "./composables/useSidepanelDrag";
+import { useUnmanagedPanel } from "./composables/useUnmanagedPanel";
 import ConfirmDialog from "./components/ConfirmDialog.vue";
+import FloatingActions from "./components/FloatingActions.vue";
 import UnmanagedSection from "./components/UnmanagedSection.vue";
 import WorkspaceSection from "./components/WorkspaceSection.vue";
 import WorkspaceNavigator from "./components/WorkspaceNavigator.vue";
@@ -27,11 +27,9 @@ const workspaceState = ref<WorkspaceState>({
 const openColorPickerGroupId = ref<string | null>(null);
 const editingBookmarkId = ref<string | null>(null);
 const editingWorkspaceId = ref<string | null>(null);
-const editingUnmanagedGroupId = ref<number | null>(null);
 const workspaceTitleInputs = ref<Record<string, HTMLInputElement | null>>({});
 const pageTitleInputs = ref<Record<string, HTMLInputElement | null>>({});
 const workspaceSectionElements = ref<Record<string, HTMLElement | null>>({});
-const unmanagedSectionElement = ref<HTMLElement | null>(null);
 const windowContext = ref<WindowContext | null>(null);
 const currentWindowId = ref<number | undefined>();
 const { t } = useI18n();
@@ -50,29 +48,11 @@ const allPages = computed(() => [
   ...workspaceState.value.unmanagedGroups.flatMap((group) => group.pages),
   ...workspaceState.value.workspaces.flatMap((workspace) => workspace.pages),
 ]);
-const unmanagedItems = computed(() => [
-  ...workspaceState.value.unmanagedPages.map((page) => ({
-    type: "page" as const,
-    id: page.id,
-    order: page.order,
-    page,
-  })),
-  ...workspaceState.value.unmanagedGroups.map((group) => ({
-    type: "group" as const,
-    id: group.id,
-    order: group.order,
-    group,
-  })),
-].sort((a, b) => a.order - b.order));
 
 function findPage(pageId: string | null) {
   if (!pageId) return undefined;
 
   return allPages.value.find((page) => page.id === pageId);
-}
-
-function unmanagedGroupColorPickerId(groupId: number) {
-  return `chrome-group:${groupId}`;
 }
 
 function setWorkspaceSectionElement(workspaceId: string, element: unknown) {
@@ -87,10 +67,6 @@ function setPageTitleInput(bookmarkId: string, element: unknown) {
   pageTitleInputs.value[bookmarkId] = element instanceof HTMLInputElement ? element : null;
 }
 
-function setUnmanagedSectionElement(element: unknown) {
-  unmanagedSectionElement.value = element instanceof HTMLElement ? element : null;
-}
-
 function scrollToWorkspace(workspaceId: string) {
   workspaceSectionElements.value[workspaceId]?.scrollIntoView({
     behavior: "smooth",
@@ -98,22 +74,8 @@ function scrollToWorkspace(workspaceId: string) {
   });
 }
 
-function scrollToUnmanaged() {
-  unmanagedSectionElement.value?.scrollIntoView({
-    behavior: "smooth",
-    block: "start",
-  });
-}
-
 function workspaceOpenPageCount(workspace: WorkspaceView) {
   return workspace.pages.filter((page) => page.open).length;
-}
-
-function unmanagedOpenPageCount() {
-  const unmanagedGroupPages = workspaceState.value.unmanagedGroups.flatMap((group) => group.pages);
-
-  return [...workspaceState.value.unmanagedPages, ...unmanagedGroupPages]
-    .filter((page) => page.open).length;
 }
 
 function isEditableElement(target: EventTarget | null) {
@@ -246,40 +208,6 @@ async function updateWorkspaceColor(workspace: WorkspaceView, color: TabGroupCol
   await refreshTabs();
 }
 
-async function updateUnmanagedGroupTitle(group: UnmanagedGroupView, event: Event) {
-  const target = event.target as HTMLInputElement;
-
-  await sendMessage({
-    type: "RENAME_UNMANAGED_GROUP",
-    groupId: group.id,
-    title: target.value,
-  });
-  editingUnmanagedGroupId.value = null;
-  await refreshTabs();
-}
-
-function editUnmanagedGroupTitle(group: UnmanagedGroupView) {
-  editingUnmanagedGroupId.value = group.id;
-}
-
-async function updateUnmanagedGroupColor(group: UnmanagedGroupView, color: TabGroupColor) {
-  await sendMessage({
-    type: "UPDATE_UNMANAGED_GROUP_COLOR",
-    groupId: group.id,
-    color,
-  });
-  openColorPickerGroupId.value = null;
-  await refreshTabs();
-}
-
-async function ungroupUnmanagedGroup(group: UnmanagedGroupView) {
-  await sendMessage({
-    type: "UNGROUP_UNMANAGED_GROUP",
-    groupId: group.id,
-  });
-  await refreshTabs();
-}
-
 async function toggleWorkspace(workspace: WorkspaceView) {
   await sendMessage({
     type: "TOGGLE_WORKSPACE",
@@ -409,6 +337,24 @@ function stopInputDrag(event: DragEvent) {
 function isEditingPage(page: PageModel) {
   return Boolean(page.bookmarkId && editingBookmarkId.value === page.bookmarkId);
 }
+
+const {
+  editingUnmanagedGroupId,
+  unmanagedItems,
+  unmanagedGroupColorPickerId,
+  setUnmanagedSectionElement,
+  scrollToUnmanaged,
+  unmanagedOpenPageCount,
+  updateUnmanagedGroupTitle,
+  editUnmanagedGroupTitle,
+  updateUnmanagedGroupColor,
+  ungroupUnmanagedGroup,
+} = useUnmanagedPanel({
+  workspaceState,
+  openColorPickerGroupId,
+  sendMessage,
+  refreshTabs,
+});
 
 const {
   draggedPageId,
@@ -710,26 +656,12 @@ onUnmounted(() => {
       />
     </section>
 
-    <div class="floating-actions" :aria-label="t('newWorkspace')">
-      <button
-        class="icon-button floating-create-button"
-        type="button"
-        :title="t('newPage')"
-        :aria-label="t('newPage')"
-        @click="createPage"
-      >
-        <FilePlus :size="21" aria-hidden="true" />
-      </button>
-      <button
-        class="icon-button floating-create-button primary"
-        type="button"
-        :title="t('newWorkspace')"
-        :aria-label="t('newWorkspace')"
-        @click="createWorkspace"
-      >
-        <Plus :size="22" aria-hidden="true" />
-      </button>
-    </div>
+    <FloatingActions
+      :new-page-label="t('newPage')"
+      :new-workspace-label="t('newWorkspace')"
+      @create-page="createPage"
+      @create-workspace="createWorkspace"
+    />
 
     <ConfirmDialog
       v-if="confirmDialog"

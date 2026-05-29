@@ -1,5 +1,7 @@
 import { WindowModel, type WindowContext, type WindowRole } from "./window.model";
+import { UnmanagedModel } from "./unmanaged.model";
 import { WorkspaceModel, type TabGroupColor } from "./workspace.model";
+import { WorkspaceRuntimeStore } from "./workspace.runtime";
 
 type AppMessage =
     | {
@@ -131,7 +133,11 @@ type AppMessage =
 export class AppModel {
 
     windows: WindowModel[] = [];
-    workspace = new WorkspaceModel();
+    // docs/product-logic.md: AppModel 只做 service worker 侧协调，
+    // Workspace / Page / Unmanaged 的具体业务分别交给领域模型。
+    runtime = new WorkspaceRuntimeStore();
+    workspace = new WorkspaceModel(this.runtime);
+    unmanaged = new UnmanagedModel(this.runtime);
 
     constructor() {
     }
@@ -238,6 +244,22 @@ export class AppModel {
         await chrome.windows.update(mainWindow.id, { focused: true });
     }
 
+    async getWorkspaceState(windowId: number) {
+        // docs/service-sidepanel-communication.md: WorkspaceState 是 side panel
+        // 渲染快照，由 managed Workspace 和 unmanaged Chrome 状态组合而成。
+        // docs/workspace-model.md: 生成 Workspace 快照时会先按名称和颜色恢复
+        // Workspace 与 Chrome Group 的 runtime binding；unmanaged 区必须在
+        // binding 同步完成后再计算，否则首次打开会把已绑定 Group 显示成 unmanaged。
+        const workspaces = await this.workspace.getWorkspaces(windowId);
+        const unmanaged = await this.unmanaged.getState(windowId);
+
+        return {
+            workspaces,
+            unmanagedPages: unmanaged.unmanagedPages,
+            unmanagedGroups: unmanaged.unmanagedGroups,
+        };
+    }
+
     start() {
         this.initialize();
 
@@ -284,14 +306,14 @@ export class AppModel {
                 return { ok: true };
             case "GET_WORKSPACE_STATE":
                 if (!message.windowId) return { workspaces: [], unmanagedPages: [], unmanagedGroups: [] };
-                return this.workspace.getState(message.windowId);
+                return this.getWorkspaceState(message.windowId);
             case "CREATE_WORKSPACE":
                 if (!message.windowId) return { ok: false };
                 await this.workspace.createWorkspace(message.windowId);
                 return { ok: true };
             case "CREATE_PAGE":
                 if (!message.windowId) return { ok: false };
-                await this.workspace.createPage(message.windowId);
+                await this.unmanaged.createPage(message.windowId);
                 return { ok: true };
             case "RENAME_WORKSPACE":
                 await this.workspace.renameWorkspace(message.workspaceId, message.name);
@@ -310,7 +332,7 @@ export class AppModel {
                 return { ok: true };
             case "OPEN_WORKSPACE_PAGE":
                 if (!message.windowId) return { ok: false };
-                await this.workspace.openWorkspacePage(
+                await this.workspace.pages.openWorkspacePage(
                     message.workspaceId,
                     message.pageId,
                     message.windowId,
@@ -318,23 +340,23 @@ export class AppModel {
                 );
                 return { ok: true };
             case "CLOSE_WORKSPACE_PAGE":
-                await this.workspace.closeWorkspacePage(message.chromeTabId);
+                await this.workspace.pages.closeWorkspacePage(message.chromeTabId);
                 return { ok: true };
             case "RESTORE_PINNED_PAGE":
-                await this.workspace.restorePinnedPage(message.bookmarkId, message.chromeTabId);
+                await this.workspace.pages.restorePinnedPage(message.bookmarkId, message.chromeTabId);
                 return { ok: true };
             case "PIN_PAGE":
-                await this.workspace.pinPage(message.workspaceId, message.chromeTabId);
+                await this.workspace.pages.pinPage(message.workspaceId, message.chromeTabId);
                 return { ok: true };
             case "UNPIN_PAGE":
-                await this.workspace.unpinPage(message.chromeTabId, message.bookmarkId);
+                await this.workspace.pages.unpinPage(message.chromeTabId, message.bookmarkId);
                 return { ok: true };
             case "UPDATE_PINNED_PAGE_TITLE":
-                await this.workspace.updatePinnedPageTitle(message.bookmarkId, message.title);
+                await this.workspace.pages.updatePinnedPageTitle(message.bookmarkId, message.title);
                 return { ok: true };
             case "MOVE_WORKSPACE_PAGE":
                 if (!message.windowId) return { ok: false };
-                await this.workspace.movePageToWorkspace(
+                await this.workspace.pages.movePageToWorkspace(
                     message.pageId,
                     message.workspaceId,
                     message.index,
@@ -345,17 +367,17 @@ export class AppModel {
                 await this.workspace.moveWorkspace(message.sourceWorkspaceId, message.index);
                 return { ok: true };
             case "RENAME_UNMANAGED_GROUP":
-                await this.workspace.renameUnmanagedGroup(message.groupId, message.title);
+                await this.unmanaged.renameGroup(message.groupId, message.title);
                 return { ok: true };
             case "UNGROUP_UNMANAGED_GROUP":
-                await this.workspace.ungroupUnmanagedGroup(message.groupId);
+                await this.unmanaged.ungroupGroup(message.groupId);
                 return { ok: true };
             case "UPDATE_UNMANAGED_GROUP_COLOR":
-                await this.workspace.updateUnmanagedGroupColor(message.groupId, message.color);
+                await this.unmanaged.updateGroupColor(message.groupId, message.color);
                 return { ok: true };
             case "MOVE_UNMANAGED_ITEM":
                 if (!message.windowId) return { ok: false };
-                await this.workspace.moveUnmanagedItem(
+                await this.unmanaged.moveItem(
                     message.itemType,
                     message.itemId,
                     message.index,
@@ -363,10 +385,10 @@ export class AppModel {
                 );
                 return { ok: true };
             case "MOVE_UNMANAGED_PAGE_TO_GROUP":
-                await this.workspace.moveUnmanagedPageToGroup(message.pageId, message.groupId, message.index);
+                await this.unmanaged.movePageToGroup(message.pageId, message.groupId, message.index);
                 return { ok: true };
             case "MOVE_UNMANAGED_GROUP_TO_WORKSPACE":
-                await this.workspace.moveUnmanagedGroupToWorkspace(
+                await this.workspace.moveChromeGroupToWorkspace(
                     message.groupId,
                     message.workspaceId,
                     message.index,

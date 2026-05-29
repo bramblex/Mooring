@@ -176,7 +176,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 ### Service Worker
 
-Service worker 应该拥有 workspace 状态的写入权。
+Service worker 应该拥有 Workspace / Page / Unmanaged 状态的写入权。`service-worker.ts` 只保留入口，具体业务由 `AppModel` 协调领域模型完成。
 
 职责：
 
@@ -189,7 +189,10 @@ Service worker 应该拥有 workspace 状态的写入权。
 - 处理 `Send current tab to main window`。
 - 处理 `Send all tabs to main window`。
 - 处理固定 tab 的打开、关闭和恢复。
-- 写入 `chrome.storage.local`。
+- 调用 `WorkspaceModel` 处理 Workspace 容器。
+- 调用 `WorkspacePageModel` 处理 Workspace 内 Page。
+- 调用 `UnmanagedModel` 处理未管理 Chrome Tab / Chrome Group。
+- 通过 `WorkspaceRuntimeStore` 管理 `chrome.storage.session` runtime binding。
 
 ### Side Panel
 
@@ -205,17 +208,17 @@ Side panel 不应该直接维护长期状态。它是 UI 和用户操作入口�
 
 ### 共享状态
 
-`WorkspaceState` 是唯一长期可信状态。
+`WorkspaceState` 是 side panel 的渲染快照，不是长期可信状态。
 
 ```ts
 type WorkspaceState = {
-  primaryWindowId?: number;
-  activeWorkspaceId?: string;
   workspaces: Workspace[];
+  unmanagedPages: Page[];
+  unmanagedGroups: UnmanagedGroup[];
 };
 ```
 
-`tabId`、`groupId`、`windowId` 都是运行时绑定，不能作为长期可信 ID。
+长期可信状态来自 Bookmark；`tabId`、`groupId`、`windowId` 都是运行时绑定，不能作为长期可信 ID。
 
 ## 消息协议
 

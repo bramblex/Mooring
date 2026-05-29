@@ -25,8 +25,10 @@
 
 - `AppModel` 是 service worker 侧的应用入口，负责注册 Chrome 事件和接收 side panel 消息。
 - `WindowModel` 表示单个窗口实体，只保存窗口 ID、窗口角色和窗口下的工作区列表。
-- `WorkspaceModel` 后续承载 workspace 数据。
-- `TabModel` 后续承载 workspace 内 tab 数据。
+- `WorkspaceModel` 只负责 Workspace 容器、Workspace 书签文件夹、Workspace 排序，以及 Workspace 与 Chrome Group 的运行时投影。
+- `WorkspacePageModel` 负责 Workspace 内 Page 生命周期，包括打开、关闭、恢复、固定、取消固定、书签标题、Page 移动和 Page 列表构建。
+- `UnmanagedModel` 负责未管理 Chrome Tab / Chrome Group，不写入 Bookmark，不承担 Workspace 语义。
+- `WorkspaceRuntimeStore` 负责运行时绑定、`chrome.storage.session` 缓存和 Workspace Page runtime order。
 - Workspace 静态结构使用 Chrome 书签树，运行时窗口和 tab 绑定保存在内存。
 
 ## Window 规则

@@ -6,9 +6,26 @@ Workspace 模型定义 Mooring 的长期工作区结构，以及它和 Chrome Gr
 
 - Workspace 长期结构可同步、可恢复。
 - Workspace 身份不依赖 Chrome 会话级 ID。
-- Workspace 只管理 Mooring Page，不直接拥有 Chrome Tab。
+- Workspace 只管理容器身份和 Workspace 与 Page 的归属，不直接拥有 Chrome Tab。
 - Chrome Group 只是 Workspace 在主窗口里的运行时投影。
 - Workspace 排序有明确的长期来源。
+
+## 代码边界
+
+当前实现按领域拆分：
+
+- `WorkspaceModel`：管理 Workspace 容器、Bookmark folder、Workspace 排序、Workspace 与 Chrome Group 的运行时投影。
+- `WorkspacePageModel`：管理 Workspace 内 Page 生命周期，包括打开、关闭、恢复、固定、取消固定、书签标题、Page 移动和 Page 列表构建。
+- `UnmanagedModel`：管理不属于任何 Workspace 的 Chrome Tab / Chrome Group。
+- `WorkspaceRuntimeStore`：管理运行时绑定、`chrome.storage.session` 缓存和 Workspace Page runtime order。
+- `AppModel`：组合上述模型，处理 side panel message，不把具体业务逻辑堆在 service worker 入口。
+
+原则：
+
+- Workspace 容器操作留在 `WorkspaceModel`。
+- Workspace 内 Page 操作留在 `WorkspacePageModel`。
+- Unmanaged 操作不得放回 `WorkspaceModel`。
+- Runtime binding / order 不直接散落在业务方法里，优先通过 `WorkspaceRuntimeStore` 操作。
 
 ## 长期结构
 
@@ -208,11 +225,12 @@ Chrome Group 排序只是运行时投影：
 
 ## 与 Page 的关系
 
-Workspace 只负责容器身份和 Workspace 顺序：
+Workspace 只负责容器身份、Workspace 顺序和 Workspace 的 Chrome Group 投影：
 
 - Pinned Page 的长期结构由 Workspace 文件夹下的 Bookmark 保存。
 - Temp Page 是当前打开 Chrome Tab 的运行时表达，不写入 Workspace 文件夹。
 - Workspace 不直接拥有 Chrome Tab。
+- Workspace 内 Page 生命周期由 `WorkspacePageModel` 负责。
 - Pinned Page 可以跨 Workspace 拖动，本质是把对应 Bookmark 移动到目标 Workspace 文件夹。
 - Pinned Page 跨 Workspace 后仍然是 Pinned Page，不会变成 Temp Page。
 - 如果跨 Workspace 的 Pinned Page 当前绑定 Chrome Tab，只确保 Chrome Tab 位于目标 Workspace 对应 Chrome Group，不同步 Chrome Tab index。
@@ -227,6 +245,7 @@ Workspace 只负责容器身份和 Workspace 顺序：
 - Unmanaged 区不写 Bookmark。
 - Unmanaged 区不改变 Mooring managed 排序。
 - Mooring 管理区排在 unmanaged 区前面。
+- Unmanaged 区域由 `UnmanagedModel` 负责，不属于 `WorkspaceModel`。
 - unmanaged Chrome Tab 可以被移动到 Workspace，成为该 Workspace 的 Temp Page。
 - unmanaged Chrome Group 可以被拖到 Workspace；这只批量移动 Group 内 Chrome Tab，不创建 Workspace。
 - unmanaged Chrome Group 自身保持 Chrome 原生概念，可以在 unmanaged 区改名、改色、解散、排序。

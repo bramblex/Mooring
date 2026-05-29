@@ -9,6 +9,27 @@ Page 模型定义 Mooring 的页面单位，以及 Page 与 Chrome Tab、Bookmar
 - 支持 Temp Page 作为当前打开但未固定的临时页面。
 - 明确 Page 排序、恢复、dirty、拖动和解绑规则。
 
+## 代码边界
+
+Workspace 内 Page 逻辑由 `WorkspacePageModel` 闭环处理。
+
+职责包括：
+
+- 构建 Workspace 内 Page 列表。
+- 打开关闭态 Pinned Page。
+- 激活已经绑定的 Chrome Tab。
+- 关闭 Workspace Page。
+- 恢复 dirty Pinned Page 到 bookmark URL。
+- Temp Page 固定为 Pinned Page。
+- Pinned Page 取消固定为 Temp Page。
+- 更新 Pinned Page bookmark title。
+- 在 Workspace 内或 Workspace 之间移动 Page。
+- 将没有 Bookmark 身份的 Temp Page 移回 unmanaged。
+
+`WorkspacePageModel` 可以请求 `WorkspaceModel` 创建或取得 Workspace 对应 Chrome Group，但不负责 Workspace folder、Workspace 名称、颜色或排序。
+
+Unmanaged 区域中的 Chrome Tab / Chrome Group 逻辑不属于 `WorkspacePageModel`，由 `UnmanagedModel` 处理。
+
 ## Page 类型
 
 ### Temp Page
