@@ -31,6 +31,12 @@ import {
   saveAiProviderConfig,
   type AiProviderConfig,
 } from "./ai/deepseek";
+import {
+  createAiPromptShortcut,
+  loadAiPromptShortcuts,
+  saveCustomAiPromptShortcuts,
+  type AiPromptShortcut,
+} from "./ai/prompt-shortcuts";
 import AiActionDock from "./components/AiActionDock.vue";
 
 const workspaceState = ref<WorkspaceState>({
@@ -55,7 +61,8 @@ const aiError = ref("");
 const aiLoading = ref(false);
 const aiPromptHistory = ref<string[]>([]);
 const aiPromptHistoryIndex = ref(-1);
-const { t } = useI18n();
+const aiShortcuts = ref<AiPromptShortcut[]>([]);
+const { t, locale } = useI18n();
 const { confirmDialog, requestConfirm, closeConfirmDialog } = useConfirmDialog();
 const { pageTitle, pageSubtitle, pageFavicon } = usePageDisplay(t);
 let refreshRequestId = 0;
@@ -451,8 +458,13 @@ async function toggleAiDock() {
     return;
   }
 
+  await openAiDock();
+}
+
+async function openAiDock() {
   aiConfig.value = await loadAiProviderConfig();
   aiPromptHistory.value = await loadAiPromptHistory();
+  aiShortcuts.value = await loadAiPromptShortcuts(locale);
   aiPromptHistoryIndex.value = -1;
   aiError.value = "";
   aiPreview.value = [];
@@ -466,12 +478,29 @@ function closeAiDock() {
   aiLoading.value = false;
 }
 
+function clearAiPlan() {
+  aiError.value = "";
+  aiPreview.value = [];
+  aiActions.value = [];
+}
+
 async function saveAiSettings() {
   await saveAiProviderConfig(aiConfig.value);
+  await saveCustomAiPromptShortcuts(aiShortcuts.value, locale);
+  aiShortcuts.value = await loadAiPromptShortcuts(locale);
 }
 
 async function generateAiPlan() {
-  if (!aiPrompt.value.trim()) {
+  await runAiPrompt(aiPrompt.value.trim());
+}
+
+async function runAiShortcut(prompt: string) {
+  await openAiDock();
+  await runAiPrompt(prompt);
+}
+
+async function runAiPrompt(prompt: string) {
+  if (!prompt) {
     aiError.value = t("aiPromptRequired");
     return;
   }
@@ -487,7 +516,6 @@ async function generateAiPlan() {
 
   try {
     await saveAiProviderConfig(aiConfig.value);
-    const prompt = aiPrompt.value.trim();
     aiPromptHistory.value = await saveAiPromptHistory(prompt);
     aiPromptHistoryIndex.value = -1;
     const plan = await generateAiActionPlan(aiConfig.value, workspaceState.value, prompt);
@@ -513,6 +541,18 @@ async function generateAiPlan() {
   } finally {
     aiLoading.value = false;
   }
+}
+
+function updateAiShortcuts(shortcuts: AiPromptShortcut[]) {
+  aiShortcuts.value = shortcuts;
+}
+
+function addAiShortcut() {
+  aiShortcuts.value = [...aiShortcuts.value, createAiPromptShortcut()];
+}
+
+function deleteAiShortcut(shortcutId: string) {
+  aiShortcuts.value = aiShortcuts.value.filter((shortcut) => shortcut.id !== shortcutId);
 }
 
 function aiPreviewText(item: AiActionPreview) {
@@ -580,6 +620,7 @@ async function applyAiPlan() {
 
 onMounted(async () => {
   await refreshAll();
+  aiShortcuts.value = await loadAiPromptShortcuts(locale);
 
   document.addEventListener("contextmenu", (event) => {
     if (isEditableElement(event.target)) return;
@@ -839,6 +880,7 @@ onUnmounted(() => {
       :loading="aiLoading"
       :has-plan="aiActions.length > 0"
       :prompt-preview="aiPromptPreview"
+      :shortcuts="aiShortcuts"
       :labels="{
         title: t('aiAction'),
         prompt: t('aiPromptPlaceholder'),
@@ -854,12 +896,23 @@ onUnmounted(() => {
         confirm: t('confirm'),
         settings: t('settings'),
         promptInfo: t('aiPromptInfo'),
+        shortcuts: t('aiShortcuts'),
+        addShortcut: t('aiAddShortcut'),
+        shortcutTitle: t('aiShortcutTitle'),
+        shortcutPrompt: t('aiShortcutPrompt'),
+        builtInShortcut: t('aiBuiltInShortcut'),
+        deleteShortcut: t('aiDeleteShortcut'),
       }"
+      @update:shortcuts="updateAiShortcuts"
       @toggle="toggleAiDock"
       @generate="generateAiPlan"
+      @run-shortcut="runAiShortcut"
       @apply="applyAiPlan"
+      @clear-plan="clearAiPlan"
       @cancel="closeAiDock"
       @save-settings="saveAiSettings"
+      @add-shortcut="addAiShortcut"
+      @delete-shortcut="deleteAiShortcut"
       @history-prev="selectAiPromptHistory(1)"
       @history-next="selectAiPromptHistory(-1)"
     />

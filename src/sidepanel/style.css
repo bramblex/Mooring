@@ -205,6 +205,7 @@ input:focus-visible {
   width: 32px;
   height: 32px;
   --ai-panel-width: min(312px, calc(100vw - 56px));
+  --ai-result-max-height: min(260px, calc(100vh - 92px));
 }
 
 .floating-ai-button {
@@ -243,6 +244,49 @@ input:focus-visible {
   color: var(--color-text);
   border-color: var(--color-control-border);
   background: var(--color-control-hover);
+  transform: none;
+}
+
+.ai-shortcut-menu {
+  position: absolute;
+  left: 0;
+  bottom: 40px;
+  z-index: 23;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: min(220px, calc(100vw - 24px));
+  max-height: min(240px, calc(100vh - 64px));
+  overflow: auto;
+  border: 1px solid var(--color-surface-border);
+  border-radius: 6px;
+  padding: 4px;
+  background: var(--color-surface);
+  box-shadow: 0 1px 4px rgb(15 23 42 / 10%);
+}
+
+.ai-dock.has-settings-button .ai-shortcut-menu {
+  bottom: 80px;
+}
+
+.ai-shortcut-item {
+  justify-content: flex-start;
+  min-height: 28px;
+  border-color: transparent;
+  padding: 0 7px;
+  color: var(--color-text);
+  background: transparent;
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.ai-shortcut-item:hover,
+.ai-shortcut-item:focus-visible {
+  border-color: color-mix(in srgb, var(--color-ai) 28%, transparent);
+  color: var(--color-ai);
+  background: color-mix(in srgb, var(--color-ai) 8%, var(--color-surface));
+  box-shadow: none;
   transform: none;
 }
 
@@ -370,7 +414,7 @@ input:focus-visible {
   flex-direction: column;
   gap: 6px;
   width: var(--ai-panel-width);
-  max-height: min(260px, calc(100vh - 92px));
+  max-height: var(--ai-result-max-height);
   overflow: auto;
   border: 1px solid var(--color-surface-border);
   border-radius: 6px;
@@ -460,33 +504,37 @@ input:focus-visible {
   left: 38px;
   bottom: 80px;
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 7px;
   width: var(--ai-panel-width);
+  max-height: min(430px, calc(100vh - 92px));
   border: 1px solid var(--color-surface-border);
   border-radius: 6px;
-  padding: 8px;
+  padding: 0;
   background: var(--color-surface);
   box-shadow: 0 1px 4px rgb(15 23 42 / 10%);
+  overflow: hidden;
 }
 
-.ai-prompt-popover {
-  position: absolute;
-  left: 38px;
-  bottom: 80px;
-  display: block;
-  width: min(520px, calc(100vw - 24px));
-  max-height: min(420px, calc(100vh - 140px));
+.ai-settings-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 8px 0;
+}
+
+.ai-prompt-inline {
+  max-height: 180px;
   overflow: auto;
   border: 1px solid var(--color-surface-border);
   border-radius: 6px;
   padding: 6px;
-  background: var(--color-surface);
-  box-shadow: 0 1px 4px rgb(15 23 42 / 10%);
-  z-index: 24;
+  background: color-mix(in srgb, var(--color-surface) 82%, var(--color-bg));
 }
 
-.ai-prompt-popover pre {
+.ai-prompt-inline pre {
   margin: 0;
   color: var(--color-text);
   user-select: text;
@@ -509,7 +557,8 @@ input:focus-visible {
 }
 
 .ai-settings-popover input,
-.ai-settings-popover select {
+.ai-settings-popover select,
+.ai-settings-popover textarea {
   width: 100%;
   min-height: 30px;
   border: 1px solid var(--color-control-border);
@@ -521,20 +570,114 @@ input:focus-visible {
 }
 
 .ai-settings-popover input:hover,
-.ai-settings-popover select:hover {
+.ai-settings-popover select:hover,
+.ai-settings-popover textarea:hover {
   border-color: color-mix(in srgb, var(--color-ai) 34%, var(--color-control-border));
   background: var(--color-control-hover);
 }
 
 .ai-settings-popover input:focus-visible,
-.ai-settings-popover select:focus-visible {
+.ai-settings-popover select:focus-visible,
+.ai-settings-popover textarea:focus-visible {
   border-color: color-mix(in srgb, var(--color-ai) 55%, var(--color-control-border));
   outline-color: var(--color-ai);
+}
+
+.ai-settings-popover textarea {
+  min-height: 48px;
+  padding: 6px 8px;
+  resize: vertical;
+  line-height: 1.35;
+}
+
+.ai-settings-popover input:disabled,
+.ai-settings-popover textarea:disabled {
+  color: var(--color-muted);
+  background: color-mix(in srgb, var(--color-surface) 82%, var(--color-bg));
+  cursor: default;
+}
+
+.ai-shortcut-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  border-top: 1px solid var(--color-surface-border);
+  padding-top: 6px;
+}
+
+.ai-settings-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.ai-shortcut-settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ai-shortcut-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid var(--color-surface-border);
+  border-radius: 6px;
+  padding: 5px;
+  background: color-mix(in srgb, var(--color-surface) 84%, var(--color-bg));
+}
+
+.ai-shortcut-editor-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-shortcut-editor input,
+.ai-shortcut-editor textarea {
+  border-color: transparent;
+  background: transparent;
+}
+
+.ai-shortcut-editor input {
+  min-height: 24px;
+  padding: 0 4px;
+  font-weight: 650;
+}
+
+.ai-shortcut-editor textarea {
+  min-height: 38px;
+  padding: 4px;
+  resize: none;
+}
+
+.ai-shortcut-editor input:hover,
+.ai-shortcut-editor textarea:hover,
+.ai-shortcut-editor input:focus-visible,
+.ai-shortcut-editor textarea:focus-visible {
+  border-color: var(--color-control-border);
+  background: var(--color-control-bg);
+}
+
+.ai-built-in-label {
+  padding: 0 4px;
+  color: var(--color-muted);
+  font-size: 11px;
+  line-height: 1.1;
 }
 
 .ai-settings-save-button {
   justify-self: end;
   min-height: 30px;
+  margin: 0 8px 8px;
   border-color: color-mix(in srgb, var(--color-ai) 38%, var(--color-control-border));
   color: var(--color-ai);
   background: color-mix(in srgb, var(--color-ai) 7%, var(--color-surface));
@@ -1260,6 +1403,11 @@ h2 {
   border-color: transparent;
   background: var(--color-control-hover);
   color: var(--color-focus);
+}
+
+.inline-icon-button.danger:hover,
+.inline-icon-button.danger:focus-visible {
+  color: var(--color-danger);
 }
 
 .edit-inline-button {

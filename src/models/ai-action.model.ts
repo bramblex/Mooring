@@ -116,14 +116,14 @@ export function buildAiPromptInput(state: WorkspaceState, prompt: string) {
         name: workspace.name,
         color: workspace.color,
         collapsed: workspace.collapsed,
-        pages: workspace.pages.map(compactPage),
+        pages: workspace.pages.filter(isAiVisiblePage).map(compactPage),
       })),
-      unmanagedPages: state.unmanagedPages.map(compactPage),
+      unmanagedPages: state.unmanagedPages.filter(isAiVisiblePage).map(compactPage),
       unmanagedGroups: state.unmanagedGroups.map((group) => ({
         id: group.id,
         title: group.title,
         color: group.color,
-        pages: group.pages.map(compactPage),
+        pages: group.pages.filter(isAiVisiblePage).map(compactPage),
       })),
     },
     schema: AI_ACTION_SCHEMA,
@@ -425,6 +425,15 @@ function compactPage(page: PageModel) {
     dirty: page.dirty,
     open: page.open,
   };
+}
+
+function isAiVisiblePage(page: PageModel) {
+  const url = page.url || "";
+
+  return !url.startsWith("chrome://")
+    && !url.startsWith("chrome-extension://")
+    && !url.startsWith("edge://")
+    && !url.startsWith("about:");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -35,17 +35,30 @@ export const DEFAULT_AI_CONFIG: AiProviderConfig = {
 };
 
 export const AI_CONFIG_STORAGE_KEY = "mooringAiProviderConfig";
+export const AI_CONFIG_SYNC_STORAGE_KEY = "mooringAiProviderConfigSync";
+export const AI_CONFIG_SECRET_STORAGE_KEY = "mooringAiProviderSecrets";
 export const AI_PROMPT_HISTORY_STORAGE_KEY = "mooringAiPromptHistory";
 const AI_PROMPT_HISTORY_LIMIT = 20;
 
 export async function loadAiProviderConfig(): Promise<AiProviderConfig> {
-  const stored = await chrome.storage.local.get(AI_CONFIG_STORAGE_KEY);
-  const value = isRecord(stored[AI_CONFIG_STORAGE_KEY]) ? stored[AI_CONFIG_STORAGE_KEY] : {};
+  const [synced, local] = await Promise.all([
+    getSyncStorage(AI_CONFIG_SYNC_STORAGE_KEY),
+    chrome.storage.local.get([AI_CONFIG_STORAGE_KEY, AI_CONFIG_SECRET_STORAGE_KEY]),
+  ]);
+  const legacyValue = isRecord(local[AI_CONFIG_STORAGE_KEY]) ? local[AI_CONFIG_STORAGE_KEY] : {};
+  const syncedValue = isRecord(synced[AI_CONFIG_SYNC_STORAGE_KEY]) ? synced[AI_CONFIG_SYNC_STORAGE_KEY] : {};
+  const secretValue = isRecord(local[AI_CONFIG_SECRET_STORAGE_KEY]) ? local[AI_CONFIG_SECRET_STORAGE_KEY] : {};
+  const value = { ...legacyValue, ...syncedValue };
   const apiStyle = value.apiStyle === "anthropic" ? "anthropic" : "openai";
 
   return {
     ...DEFAULT_AI_CONFIG,
     ...value,
+    apiKey: typeof secretValue.apiKey === "string"
+      ? secretValue.apiKey
+      : typeof legacyValue.apiKey === "string"
+        ? legacyValue.apiKey
+        : "",
     apiStyle,
   };
 }
@@ -54,14 +67,21 @@ export async function saveAiProviderConfig(config: AiProviderConfig) {
   const apiStyle = config.apiStyle === "anthropic" ? "anthropic" : "openai";
   const defaults = AI_PROVIDER_STYLE_DEFAULTS[apiStyle];
 
-  await chrome.storage.local.set({
-    [AI_CONFIG_STORAGE_KEY]: {
-      apiStyle,
-      baseUrl: normalizeBaseUrl(config.baseUrl || defaults.baseUrl),
-      apiKey: config.apiKey.trim(),
-      model: config.model.trim() || defaults.model,
-    },
-  });
+  await Promise.all([
+    setSyncStorage({
+      [AI_CONFIG_SYNC_STORAGE_KEY]: {
+        apiStyle,
+        baseUrl: normalizeBaseUrl(config.baseUrl || defaults.baseUrl),
+        model: config.model.trim() || defaults.model,
+      },
+    }),
+    chrome.storage.local.set({
+      [AI_CONFIG_SECRET_STORAGE_KEY]: {
+        apiKey: config.apiKey.trim(),
+      },
+    }),
+    chrome.storage.local.remove(AI_CONFIG_STORAGE_KEY),
+  ]);
 }
 
 export async function loadAiPromptHistory(): Promise<string[]> {
@@ -271,6 +291,22 @@ function providerEndpoint(baseUrl: string, endpoint: string) {
   }
 
   return `${normalizedBaseUrl}${endpoint}`;
+}
+
+async function getSyncStorage(key: string) {
+  try {
+    return await chrome.storage.sync.get(key);
+  } catch {
+    return chrome.storage.local.get(key);
+  }
+}
+
+async function setSyncStorage(value: Record<string, unknown>) {
+  try {
+    await chrome.storage.sync.set(value);
+  } catch {
+    await chrome.storage.local.set(value);
+  }
 }
 
 function stripJsonFence(content: string) {
