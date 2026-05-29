@@ -5,6 +5,7 @@
 - [Window 模型](./window-model.md)
 - [Workspace 模型](./workspace-model.md)
 - [Page 模型](./page-model.md)
+- [AI Action 执行计划](./ai-action-plan.md)
 
 ## 术语
 
@@ -340,3 +341,4 @@ Bookmark 层是长期状态来源。
 - 不把 Temp Page 写入 bookmark。
 - 不自动把 dirty Page 当前 URL 写回 bookmark。
 - 不让临时窗口接管 Mooring Workspace。
+- 不把 AI 做成长期聊天上下文；AI 只能生成待确认的 Mooring 操作计划。
