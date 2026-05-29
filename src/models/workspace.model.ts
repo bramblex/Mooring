@@ -107,6 +107,20 @@ export class WorkspaceModel {
     return folder.id;
   }
 
+  async ensureStarterWorkspace() {
+    await this.runtime.ensureLoaded();
+
+    const root = await ensureRootFolder();
+    const folders = await listWorkspaceFolders(root.id);
+    if (folders.length > 0) return;
+
+    const name = chrome.i18n.getMessage("starterWorkspaceName") || "Inbox";
+    await chrome.bookmarks.create({
+      parentId: root.id,
+      title: formatWorkspaceTitle(name, "blue", false),
+    });
+  }
+
   async renameWorkspace(workspaceId: string, name: string) {
     await this.runtime.ensureLoaded();
 

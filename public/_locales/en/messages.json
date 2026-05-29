@@ -7,5 +7,8 @@
   },
   "openMooring": {
     "message": "Open Mooring"
+  },
+  "starterWorkspaceName": {
+    "message": "Inbox"
   }
 }

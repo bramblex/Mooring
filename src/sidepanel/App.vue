@@ -19,6 +19,8 @@ import WorkspaceSection from "./components/WorkspaceSection.vue";
 import WorkspaceNavigator from "./components/WorkspaceNavigator.vue";
 import { GROUP_COLORS, groupColorStyle } from "./groupColors";
 
+const ONBOARDING_STORAGE_KEY = "mooringOnboardingDismissed";
+
 const workspaceState = ref<WorkspaceState>({
   workspaces: [],
   unmanagedPages: [],
@@ -32,6 +34,7 @@ const pageTitleInputs = ref<Record<string, HTMLInputElement | null>>({});
 const workspaceSectionElements = ref<Record<string, HTMLElement | null>>({});
 const windowContext = ref<WindowContext | null>(null);
 const currentWindowId = ref<number | undefined>();
+const showOnboarding = ref(false);
 const { t } = useI18n();
 const { confirmDialog, requestConfirm, closeConfirmDialog } = useConfirmDialog();
 const { pageTitle, pageSubtitle, pageFavicon } = usePageDisplay(t);
@@ -124,6 +127,16 @@ async function refreshWindowContext() {
 async function refreshAll() {
   await refreshWindowContext();
   await refreshTabs();
+}
+
+async function loadOnboardingState() {
+  const stored = await chrome.storage.local.get(ONBOARDING_STORAGE_KEY);
+  showOnboarding.value = !stored[ONBOARDING_STORAGE_KEY];
+}
+
+async function dismissOnboarding() {
+  showOnboarding.value = false;
+  await chrome.storage.local.set({ [ONBOARDING_STORAGE_KEY]: true });
 }
 
 async function openMainWindowFromPanel() {
@@ -413,6 +426,7 @@ const {
 
 onMounted(async () => {
   await refreshAll();
+  await loadOnboardingState();
 
   document.addEventListener("contextmenu", (event) => {
     if (isEditableElement(event.target)) return;
@@ -532,6 +546,27 @@ onUnmounted(() => {
       @temp-dragleave="onDragLeave"
       @temp-drop="onTempNavDrop"
     />
+
+    <section v-if="showOnboarding" class="onboarding-panel" :aria-label="t('onboardingTitle')">
+      <div class="onboarding-copy">
+        <h1>{{ t("onboardingTitle") }}</h1>
+        <p>{{ t("onboardingDescription") }}</p>
+        <ul>
+          <li>{{ t("onboardingDrag") }}</li>
+          <li>{{ t("onboardingPin") }}</li>
+          <li>{{ t("onboardingWindow") }}</li>
+        </ul>
+      </div>
+      <button
+        type="button"
+        class="confirm-button onboarding-dismiss-button"
+        :title="t('onboardingDismiss')"
+        :aria-label="t('onboardingDismiss')"
+        @click="dismissOnboarding"
+      >
+        {{ t("onboardingDismiss") }}
+      </button>
+    </section>
 
     <section class="groups" :aria-label="t('openTabs')">
       <!-- docs/product-logic.md: Mooring 管理的 Workspace 区域排在 Unmanaged 区域前面。 -->

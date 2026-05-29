@@ -263,8 +263,11 @@ export class AppModel {
     start() {
         this.initialize();
 
-        chrome.runtime.onInstalled.addListener(async () => {
+        chrome.runtime.onInstalled.addListener(async (details) => {
             await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+            if (details.reason === "install") {
+                await this.workspace.ensureStarterWorkspace();
+            }
             await this.initialize();
         });
 

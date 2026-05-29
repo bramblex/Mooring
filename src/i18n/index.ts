@@ -43,6 +43,12 @@ const messages = {
     emptyUnmanagedDrop: "Empty",
     closePage: "Close page",
     ungroup: "Ungroup",
+    onboardingTitle: "Start with one workspace",
+    onboardingDescription: "Mooring keeps workspace structure in Chrome bookmarks and uses tab groups for open pages.",
+    onboardingDrag: "Drag pages or Chrome groups into a workspace to organize the window.",
+    onboardingPin: "Pin a page when you want it to reopen with that workspace later.",
+    onboardingWindow: "Other Chrome windows are temporary; send tabs back here when you need them.",
+    onboardingDismiss: "Got it",
   },
   zh: {
     appName: "Mooring",
@@ -85,6 +91,12 @@ const messages = {
     emptyUnmanagedDrop: "空",
     closePage: "关闭 Page",
     ungroup: "取消分组",
+    onboardingTitle: "从一个 Workspace 开始",
+    onboardingDescription: "Mooring 用 Chrome 书签保存 Workspace 结构，用标签组承载已打开页面。",
+    onboardingDrag: "把页面或 Chrome 分组拖进 Workspace，就能整理当前窗口。",
+    onboardingPin: "需要长期保留的页面可以固定，之后会跟随 Workspace 恢复。",
+    onboardingWindow: "其他 Chrome 窗口会视为临时窗口，需要时可以把页面发送回主窗口。",
+    onboardingDismiss: "知道了",
   },
 } as const;
 
