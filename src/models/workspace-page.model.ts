@@ -222,8 +222,12 @@ export class WorkspacePageModel {
     await this.runtime.ensureLoaded();
 
     const parsedId = parsePageId(pageId);
-    const bookmarkId = parsedId.bookmarkId
+    let bookmarkId = parsedId.bookmarkId
       || (parsedId.chromeTabId ? this.runtime.chromeTabBookmarkIds.get(parsedId.chromeTabId) : undefined);
+    if (bookmarkId && !await this.bookmarkExists(bookmarkId)) {
+      if (parsedId.bookmarkId) return;
+      bookmarkId = undefined;
+    }
     const openChromeTabId = parsedId.chromeTabId
       || (bookmarkId ? await this.findOpenChromeTabIdByBookmarkId(bookmarkId) : undefined);
     const pageOrderId = bookmarkId ? `bookmark:${bookmarkId}` : pageId;
@@ -240,6 +244,8 @@ export class WorkspacePageModel {
       await chrome.tabs.ungroup(openChromeTabId);
       return;
     }
+
+    if (!await this.bookmarkFolderExists(workspaceId)) return;
 
     if (bookmarkId) {
       // docs/page-model.md: Pinned Page 在 Workspace 内和跨 Workspace 都可以自由排序；
@@ -261,6 +267,24 @@ export class WorkspacePageModel {
     await chrome.tabs.group({ tabIds: openChromeTabId, groupId });
 
     void this.runtime.persist();
+  }
+
+  private async bookmarkExists(bookmarkId: string) {
+    try {
+      await chrome.bookmarks.get(bookmarkId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async bookmarkFolderExists(bookmarkId: string) {
+    try {
+      const [bookmark] = await chrome.bookmarks.get(bookmarkId);
+      return Boolean(bookmark && !bookmark.url);
+    } catch {
+      return false;
+    }
   }
 
   private async chromeTabExists(tabId: number) {

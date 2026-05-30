@@ -139,6 +139,20 @@ async function dismissOnboarding() {
   await chrome.storage.local.set({ [ONBOARDING_STORAGE_KEY]: true });
 }
 
+function handleDocumentContextMenu(event: MouseEvent) {
+  if (isEditableElement(event.target)) return;
+
+  event.preventDefault();
+}
+
+function handleDocumentClick(event: MouseEvent) {
+  const target = event.target;
+
+  if (target instanceof HTMLElement && target.closest(".group-color-picker")) return;
+
+  openColorPickerGroupId.value = null;
+}
+
 async function openMainWindowFromPanel() {
   await chrome.runtime.sendMessage({
     type: "OPEN_MAIN_WINDOW",
@@ -248,6 +262,8 @@ async function deleteWorkspace(workspace: WorkspaceView) {
 }
 
 async function closeWorkspacePages(workspace: WorkspaceView) {
+  if (!await requestConfirm(t("closeWorkspacePagesConfirm"))) return;
+
   await sendMessage({
     type: "CLOSE_WORKSPACE_PAGES",
     workspaceId: workspace.id,
@@ -428,19 +444,8 @@ onMounted(async () => {
   await refreshAll();
   await loadOnboardingState();
 
-  document.addEventListener("contextmenu", (event) => {
-    if (isEditableElement(event.target)) return;
-
-    event.preventDefault();
-  });
-
-  document.addEventListener("click", (event) => {
-    const target = event.target;
-
-    if (target instanceof HTMLElement && target.closest(".group-color-picker")) return;
-
-    openColorPickerGroupId.value = null;
-  });
+  document.addEventListener("contextmenu", handleDocumentContextMenu);
+  document.addEventListener("click", handleDocumentClick);
 
   chrome.tabs.onCreated.addListener(scheduleRefreshTabs);
   chrome.tabs.onUpdated.addListener(scheduleRefreshTabs);
@@ -465,6 +470,9 @@ onUnmounted(() => {
     window.clearTimeout(scheduledRefreshId);
     scheduledRefreshId = undefined;
   }
+
+  document.removeEventListener("contextmenu", handleDocumentContextMenu);
+  document.removeEventListener("click", handleDocumentClick);
 
   chrome.tabs.onCreated.removeListener(scheduleRefreshTabs);
   chrome.tabs.onUpdated.removeListener(scheduleRefreshTabs);

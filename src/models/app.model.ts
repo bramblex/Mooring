@@ -261,7 +261,7 @@ export class AppModel {
     }
 
     start() {
-        this.initialize();
+        void this.initialize();
 
         chrome.runtime.onInstalled.addListener(async (details) => {
             await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
@@ -289,7 +289,14 @@ export class AppModel {
         });
 
         chrome.runtime.onMessage.addListener((message: AppMessage, _sender, sendResponse) => {
-            this.handleMessage(message).then(sendResponse);
+            this.handleMessage(message)
+                .then(sendResponse)
+                .catch((error) => {
+                    sendResponse({
+                        ok: false,
+                        error: error instanceof Error ? error.message : "Unexpected service worker error.",
+                    });
+                });
             return true;
         });
     }
