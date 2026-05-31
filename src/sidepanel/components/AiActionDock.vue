@@ -1,11 +1,6 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from "vue";
 import { Info, Plus, Settings, Sparkles, Trash2 } from "@lucide/vue";
-import {
-  AI_PROVIDER_STYLE_DEFAULTS,
-  type AiApiStyle,
-  type AiProviderConfig,
-} from "../ai/deepseek";
 import type { AiPromptShortcut } from "../ai/prompt-shortcuts";
 
 type LocalizedAiActionPreview = {
@@ -15,7 +10,6 @@ type LocalizedAiActionPreview = {
 
 const props = defineProps<{
   open: boolean;
-  config: AiProviderConfig;
   prompt: string;
   preview: LocalizedAiActionPreview[];
   error: string;
@@ -26,12 +20,6 @@ const props = defineProps<{
   labels: {
     title: string;
     prompt: string;
-    apiStyle: string;
-    openAiStyle: string;
-    anthropicStyle: string;
-    baseUrl: string;
-    apiKey: string;
-    model: string;
     save: string;
     apply: string;
     cancel: string;
@@ -48,7 +36,6 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  "update:config": [config: AiProviderConfig];
   "update:prompt": [prompt: string];
   "update:shortcuts": [shortcuts: AiPromptShortcut[]];
   toggle: [];
@@ -167,17 +154,6 @@ function saveSettings() {
   emit("update:shortcuts", cloneShortcuts(draftShortcuts.value));
   emit("saveSettings");
   settingsOpen.value = false;
-}
-
-function updateApiStyle(event: Event) {
-  const apiStyle = (event.target as HTMLSelectElement).value as AiApiStyle;
-  const defaults = AI_PROVIDER_STYLE_DEFAULTS[apiStyle];
-  emit("update:config", {
-    ...props.config,
-    apiStyle,
-    baseUrl: defaults.baseUrl,
-    model: defaults.model,
-  });
 }
 
 function showShortcutMenu() {
@@ -305,37 +281,6 @@ function cloneShortcuts(shortcuts: AiPromptShortcut[]) {
 
     <section v-if="open && settingsOpen" class="ai-settings-popover" :aria-label="labels.settings">
       <div class="ai-settings-scroll">
-        <label>
-          <span>{{ labels.apiStyle }}</span>
-          <select :value="config.apiStyle" @change="updateApiStyle">
-            <option value="openai">{{ labels.openAiStyle }}</option>
-            <option value="anthropic">{{ labels.anthropicStyle }}</option>
-          </select>
-        </label>
-        <label>
-          <span>{{ labels.baseUrl }}</span>
-          <input
-            :value="config.baseUrl"
-            @input="$emit('update:config', { ...config, baseUrl: ($event.target as HTMLInputElement).value })"
-          />
-        </label>
-        <label>
-          <span>{{ labels.model }}</span>
-          <input
-            :value="config.model"
-            @input="$emit('update:config', { ...config, model: ($event.target as HTMLInputElement).value })"
-          />
-        </label>
-        <label>
-          <span>{{ labels.apiKey }}</span>
-          <input
-            type="password"
-            autocomplete="off"
-            :value="config.apiKey"
-            @input="$emit('update:config', { ...config, apiKey: ($event.target as HTMLInputElement).value })"
-          />
-        </label>
-
         <div class="ai-shortcut-settings">
           <div class="ai-settings-section-header">
             <span>{{ labels.shortcuts }}</span>

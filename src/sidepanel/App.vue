@@ -23,14 +23,12 @@ import WorkspaceNavigator from "./components/WorkspaceNavigator.vue";
 import { GROUP_COLORS, groupColorStyle } from "./groupColors";
 import {
   buildAiRequestPreview,
-  DEFAULT_AI_CONFIG,
+  getBuiltInAiStatus,
   generateAiActionPlan,
   loadAiPromptHistory,
-  loadAiProviderConfig,
   saveAiPromptHistory,
-  saveAiProviderConfig,
-  type AiProviderConfig,
-} from "./ai/deepseek";
+  type BuiltInAiStatus,
+} from "./ai/chrome-built-in";
 import {
   createAiPromptShortcut,
   loadAiPromptShortcuts,
@@ -52,9 +50,16 @@ const pageTitleInputs = ref<Record<string, HTMLInputElement | null>>({});
 const workspaceSectionElements = ref<Record<string, HTMLElement | null>>({});
 const windowContext = ref<WindowContext | null>(null);
 const currentWindowId = ref<number | undefined>();
+const isAiAvailable = ref(false);
+const aiStatus = ref<BuiltInAiStatus>({
+  supported: false,
+  availability: "checking",
+  enabled: false,
+  checkedAt: "",
+});
+const isAiStatusOpen = ref(false);
 const isAiDockOpen = ref(false);
 const aiPrompt = ref("");
-const aiConfig = ref<AiProviderConfig>({ ...DEFAULT_AI_CONFIG });
 const aiPreview = ref<AiActionPreview[]>([]);
 const aiActions = ref<AiAction[]>([]);
 const aiError = ref("");
@@ -71,7 +76,7 @@ let scheduledRefreshId: number | undefined;
 const isPrimaryWindow = computed(() => windowContext.value?.role === "primary");
 const isWindowContextReady = computed(() => Boolean(windowContext.value));
 const aiPromptPreview = computed(() => JSON.stringify(
-  buildAiRequestPreview(aiConfig.value, workspaceState.value, aiPrompt.value.trim()),
+  buildAiRequestPreview(workspaceState.value, aiPrompt.value.trim()),
   null,
   2,
 ));
@@ -462,7 +467,12 @@ async function toggleAiDock() {
 }
 
 async function openAiDock() {
-  aiConfig.value = await loadAiProviderConfig();
+  await refreshAiStatus();
+  if (!isAiAvailable.value) {
+    isAiStatusOpen.value = true;
+    return;
+  }
+
   aiPromptHistory.value = await loadAiPromptHistory();
   aiShortcuts.value = await loadAiPromptShortcuts(locale);
   aiPromptHistoryIndex.value = -1;
@@ -478,6 +488,21 @@ function closeAiDock() {
   aiLoading.value = false;
 }
 
+async function refreshAiStatus() {
+  aiStatus.value = await getBuiltInAiStatus();
+  isAiAvailable.value = aiStatus.value.enabled;
+  if (isAiAvailable.value) {
+    isAiStatusOpen.value = false;
+  }
+}
+
+async function toggleAiStatus() {
+  if (!isAiStatusOpen.value) {
+    await refreshAiStatus();
+  }
+  isAiStatusOpen.value = !isAiStatusOpen.value;
+}
+
 function clearAiPlan() {
   aiError.value = "";
   aiPreview.value = [];
@@ -485,7 +510,6 @@ function clearAiPlan() {
 }
 
 async function saveAiSettings() {
-  await saveAiProviderConfig(aiConfig.value);
   await saveCustomAiPromptShortcuts(aiShortcuts.value, locale);
   aiShortcuts.value = await loadAiPromptShortcuts(locale);
 }
@@ -504,8 +528,9 @@ async function runAiPrompt(prompt: string) {
     aiError.value = t("aiPromptRequired");
     return;
   }
-  if (!aiConfig.value.apiKey.trim()) {
-    aiError.value = t("aiApiKeyRequired");
+
+  if (!isAiAvailable.value) {
+    closeAiDock();
     return;
   }
 
@@ -515,10 +540,9 @@ async function runAiPrompt(prompt: string) {
   aiActions.value = [];
 
   try {
-    await saveAiProviderConfig(aiConfig.value);
     aiPromptHistory.value = await saveAiPromptHistory(prompt);
     aiPromptHistoryIndex.value = -1;
-    const plan = await generateAiActionPlan(aiConfig.value, workspaceState.value, prompt);
+    const plan = await generateAiActionPlan(workspaceState.value, prompt);
     const validation = validateAiActionPlan(plan, workspaceState.value);
     if (!validation.ok) {
       aiError.value = validation.error;
@@ -620,6 +644,7 @@ async function applyAiPlan() {
 
 onMounted(async () => {
   await refreshAll();
+  await refreshAiStatus();
   aiShortcuts.value = await loadAiPromptShortcuts(locale);
 
   document.addEventListener("contextmenu", (event) => {
@@ -871,8 +896,59 @@ onUnmounted(() => {
       @create-workspace="createWorkspace"
     />
 
+    <section
+      v-if="!isAiAvailable"
+      class="ai-debug-dock"
+      :class="{ open: isAiStatusOpen }"
+      aria-label="AI status"
+    >
+      <div v-if="isAiStatusOpen" class="ai-debug-panel">
+        <div class="ai-result-header">
+          <span class="ai-status">Chrome AI</span>
+          <button
+            type="button"
+            class="inline-icon-button"
+            title="Refresh AI status"
+            aria-label="Refresh AI status"
+            @click="refreshAiStatus"
+          >
+            ↻
+          </button>
+        </div>
+        <dl class="ai-debug-list">
+          <div>
+            <dt>LanguageModel</dt>
+            <dd>{{ aiStatus.supported ? "present" : "missing" }}</dd>
+          </div>
+          <div>
+            <dt>availability()</dt>
+            <dd>{{ aiStatus.availability }}</dd>
+          </div>
+          <div>
+            <dt>enabled</dt>
+            <dd>{{ aiStatus.enabled ? "yes" : "no" }}</dd>
+          </div>
+          <div v-if="aiStatus.checkedAt">
+            <dt>checked</dt>
+            <dd>{{ aiStatus.checkedAt }}</dd>
+          </div>
+        </dl>
+        <p v-if="aiStatus.error" class="ai-error">{{ aiStatus.error }}</p>
+      </div>
+
+      <button
+        class="icon-button floating-ai-button"
+        type="button"
+        title="AI status"
+        aria-label="AI status"
+        @click="toggleAiStatus"
+      >
+        AI
+      </button>
+    </section>
+
     <AiActionDock
-      v-model:config="aiConfig"
+      v-if="isAiAvailable"
       v-model:prompt="aiPrompt"
       :open="isAiDockOpen"
       :preview="localizedAiPreview"
@@ -884,12 +960,6 @@ onUnmounted(() => {
       :labels="{
         title: t('aiAction'),
         prompt: t('aiPromptPlaceholder'),
-        apiStyle: t('aiApiStyle'),
-        openAiStyle: t('aiApiStyleOpenAi'),
-        anthropicStyle: t('aiApiStyleAnthropic'),
-        baseUrl: t('aiBaseUrl'),
-        apiKey: t('aiApiKey'),
-        model: t('aiModel'),
         save: t('save'),
         apply: aiLoading ? t('aiApplying') : t('aiApply'),
         cancel: t('cancel'),
