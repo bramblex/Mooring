@@ -6,6 +6,7 @@ import {
   visibleUnmanagedPages,
 } from "../models/ai-classification.model";
 import { useI18n } from "../i18n";
+import type { DeleteHistoryItem } from "../models/delete-history.model";
 import type { PageModel } from "../models/page.model";
 import type { WindowContext } from "../models/window.model";
 import type {
@@ -57,6 +58,7 @@ const aiSuggestions = ref<AiClassificationPreview[]>([]);
 const selectedAiPageIds = ref<string[]>([]);
 const aiError = ref("");
 const aiLoading = ref(false);
+const deleteHistory = ref<DeleteHistoryItem[]>([]);
 const showOnboarding = ref(false);
 const { t } = useI18n();
 const { confirmDialog, requestConfirm, closeConfirmDialog } = useConfirmDialog();
@@ -150,6 +152,13 @@ async function refreshWindowContext() {
 async function refreshAll() {
   await refreshWindowContext();
   await refreshTabs();
+  await refreshDeleteHistory();
+}
+
+async function refreshDeleteHistory() {
+  deleteHistory.value = await sendMessage<DeleteHistoryItem[]>({
+    type: "GET_DELETE_HISTORY",
+  });
 }
 
 async function loadOnboardingState() {
@@ -282,6 +291,7 @@ async function deleteWorkspace(workspace: WorkspaceView) {
     workspaceId: workspace.id,
   });
   await refreshTabs();
+  await refreshDeleteHistory();
 }
 
 async function closeWorkspacePages(workspace: WorkspaceView) {
@@ -304,6 +314,7 @@ async function togglePinnedPage(workspace: WorkspaceView | null, page: PageModel
       bookmarkId: page.bookmarkId,
     });
     await refreshTabs();
+    await refreshDeleteHistory();
     return;
   }
 
@@ -466,6 +477,22 @@ const {
 async function refreshAiStatus() {
   aiStatus.value = await getBuiltInAiStatus();
   isAiAvailable.value = aiStatus.value.enabled;
+}
+
+async function restoreDeleteHistoryItem(item: DeleteHistoryItem) {
+  if (!await requestConfirm(t("restoreDeleteHistoryConfirm"))) return;
+
+  await sendMessage({
+    type: "RESTORE_DELETE_HISTORY_ITEM",
+    itemId: item.id,
+  });
+  await refreshTabs();
+  await refreshDeleteHistory();
+}
+
+function formatDeletedAt(deletedAt: number) {
+  if (!deletedAt) return "";
+  return new Date(deletedAt).toLocaleString();
 }
 
 async function classifyUnmanagedPages() {
@@ -810,8 +837,14 @@ onUnmounted(() => {
     <FloatingActions
       :new-page-label="t('newPage')"
       :new-workspace-label="t('newWorkspace')"
+      :trash-label="t('deleteHistory')"
+      :restore-label="t('restore')"
+      :empty-trash-label="t('deleteHistoryEmpty')"
+      :delete-history="deleteHistory"
+      :format-deleted-at="formatDeletedAt"
       @create-page="createPage"
       @create-workspace="createWorkspace"
+      @restore-delete-history-item="restoreDeleteHistoryItem"
     />
 
     <AiClassifierDock

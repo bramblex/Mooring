@@ -1,3 +1,4 @@
+import { DeleteHistoryModel } from "./delete-history.model";
 import { WindowModel, type WindowContext, type WindowRole } from "./window.model";
 import { UnmanagedModel } from "./unmanaged.model";
 import { WorkspaceModel, type TabGroupColor } from "./workspace.model";
@@ -22,6 +23,13 @@ type AppMessage =
     | {
         type: "GET_WORKSPACE_STATE";
         windowId?: number;
+    }
+    | {
+        type: "GET_DELETE_HISTORY";
+    }
+    | {
+        type: "RESTORE_DELETE_HISTORY_ITEM";
+        itemId: string;
     }
     | {
         type: "CREATE_WORKSPACE";
@@ -139,6 +147,7 @@ export class AppModel {
     runtime = new WorkspaceRuntimeStore();
     workspace = new WorkspaceModel(this.runtime);
     unmanaged = new UnmanagedModel(this.runtime);
+    deleteHistory = new DeleteHistoryModel();
 
     constructor() {
     }
@@ -318,6 +327,11 @@ export class AppModel {
             case "GET_WORKSPACE_STATE":
                 if (!message.windowId) return { workspaces: [], unmanagedPages: [], unmanagedGroups: [] };
                 return this.getWorkspaceState(message.windowId);
+            case "GET_DELETE_HISTORY":
+                return this.deleteHistory.getItems();
+            case "RESTORE_DELETE_HISTORY_ITEM":
+                await this.deleteHistory.restoreItem(message.itemId);
+                return { ok: true };
             case "CREATE_WORKSPACE":
                 if (!message.windowId) return { ok: false };
                 await this.workspace.createWorkspace(message.windowId);
@@ -336,6 +350,7 @@ export class AppModel {
                 await this.workspace.toggleWorkspace(message.workspaceId);
                 return { ok: true };
             case "DELETE_WORKSPACE":
+                await this.deleteHistory.recordWorkspace(message.workspaceId);
                 await this.workspace.deleteWorkspace(message.workspaceId);
                 return { ok: true };
             case "CLOSE_WORKSPACE_PAGES":
@@ -360,6 +375,7 @@ export class AppModel {
                 await this.workspace.pages.pinPage(message.workspaceId, message.chromeTabId);
                 return { ok: true };
             case "UNPIN_PAGE":
+                if (message.bookmarkId) await this.deleteHistory.recordPage(message.bookmarkId);
                 await this.workspace.pages.unpinPage(message.chromeTabId, message.bookmarkId);
                 return { ok: true };
             case "UPDATE_PINNED_PAGE_TITLE":
