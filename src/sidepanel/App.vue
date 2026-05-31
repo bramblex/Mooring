@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import type { AiAction, AiActionPreview } from "../models/ai-action.model";
+import { enrichAiActionsForPrompt, validateAiActionPlan } from "../models/ai-action.model";
 import { useI18n } from "../i18n";
 import type { PageModel } from "../models/page.model";
 import type { WindowContext } from "../models/window.model";
@@ -18,6 +20,21 @@ import UnmanagedSection from "./components/UnmanagedSection.vue";
 import WorkspaceSection from "./components/WorkspaceSection.vue";
 import WorkspaceNavigator from "./components/WorkspaceNavigator.vue";
 import { GROUP_COLORS, groupColorStyle } from "./groupColors";
+import {
+  buildAiRequestPreview,
+  generateAiActionPlan,
+  getBuiltInAiStatus,
+  loadAiPromptHistory,
+  saveAiPromptHistory,
+  type BuiltInAiStatus,
+} from "./ai/chrome-built-in";
+import {
+  createAiPromptShortcut,
+  loadAiPromptShortcuts,
+  saveCustomAiPromptShortcuts,
+  type AiPromptShortcut,
+} from "./ai/prompt-shortcuts";
+import AiActionDock from "./components/AiActionDock.vue";
 
 const ONBOARDING_STORAGE_KEY = "mooringOnboardingDismissed";
 
@@ -34,8 +51,25 @@ const pageTitleInputs = ref<Record<string, HTMLInputElement | null>>({});
 const workspaceSectionElements = ref<Record<string, HTMLElement | null>>({});
 const windowContext = ref<WindowContext | null>(null);
 const currentWindowId = ref<number | undefined>();
+const isAiAvailable = ref(false);
+const aiStatus = ref<BuiltInAiStatus>({
+  supported: false,
+  availability: "checking",
+  enabled: false,
+  checkedAt: "",
+});
+const isAiStatusOpen = ref(false);
+const isAiDockOpen = ref(false);
+const aiPrompt = ref("");
+const aiPreview = ref<AiActionPreview[]>([]);
+const aiActions = ref<AiAction[]>([]);
+const aiError = ref("");
+const aiLoading = ref(false);
+const aiPromptHistory = ref<string[]>([]);
+const aiPromptHistoryIndex = ref(-1);
+const aiShortcuts = ref<AiPromptShortcut[]>([]);
 const showOnboarding = ref(false);
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const { confirmDialog, requestConfirm, closeConfirmDialog } = useConfirmDialog();
 const { pageTitle, pageSubtitle, pageFavicon } = usePageDisplay(t);
 let refreshRequestId = 0;
@@ -43,6 +77,17 @@ let scheduledRefreshId: number | undefined;
 
 const isPrimaryWindow = computed(() => windowContext.value?.role === "primary");
 const isWindowContextReady = computed(() => Boolean(windowContext.value));
+const aiPromptPreview = computed(() => JSON.stringify(
+  buildAiRequestPreview(workspaceState.value, aiPrompt.value.trim()),
+  null,
+  2,
+));
+const localizedAiPreview = computed(() =>
+  aiPreview.value.map((item) => ({
+    text: aiPreviewText(item),
+    risk: item.risk,
+  })),
+);
 const workspaces = computed(() =>
   [...workspaceState.value.workspaces].sort((a, b) => a.order - b.order),
 );
@@ -440,9 +485,196 @@ const {
   isEditingWorkspace,
 });
 
+async function toggleAiDock() {
+  if (isAiDockOpen.value) {
+    closeAiDock();
+    return;
+  }
+
+  await openAiDock();
+}
+
+async function openAiDock() {
+  await refreshAiStatus();
+  if (!isAiAvailable.value) {
+    isAiStatusOpen.value = true;
+    return;
+  }
+
+  aiPromptHistory.value = await loadAiPromptHistory();
+  aiShortcuts.value = await loadAiPromptShortcuts(locale);
+  aiPromptHistoryIndex.value = -1;
+  aiError.value = "";
+  aiPreview.value = [];
+  aiActions.value = [];
+  isAiDockOpen.value = true;
+}
+
+function closeAiDock() {
+  isAiDockOpen.value = false;
+  aiError.value = "";
+  aiLoading.value = false;
+}
+
+async function refreshAiStatus() {
+  aiStatus.value = await getBuiltInAiStatus();
+  isAiAvailable.value = aiStatus.value.enabled;
+  if (isAiAvailable.value) {
+    isAiStatusOpen.value = false;
+  }
+}
+
+async function toggleAiStatus() {
+  if (!isAiStatusOpen.value) {
+    await refreshAiStatus();
+  }
+  isAiStatusOpen.value = !isAiStatusOpen.value;
+}
+
+function clearAiPlan() {
+  aiError.value = "";
+  aiPreview.value = [];
+  aiActions.value = [];
+}
+
+async function saveAiSettings() {
+  await saveCustomAiPromptShortcuts(aiShortcuts.value, locale);
+  aiShortcuts.value = await loadAiPromptShortcuts(locale);
+}
+
+async function generateAiPlan() {
+  await runAiPrompt(aiPrompt.value.trim());
+}
+
+async function runAiShortcut(prompt: string) {
+  await openAiDock();
+  await runAiPrompt(prompt);
+}
+
+async function runAiPrompt(prompt: string) {
+  if (!prompt) {
+    aiError.value = t("aiPromptRequired");
+    return;
+  }
+
+  if (!isAiAvailable.value) {
+    closeAiDock();
+    return;
+  }
+
+  aiLoading.value = true;
+  aiError.value = "";
+  aiPreview.value = [];
+  aiActions.value = [];
+
+  try {
+    aiPromptHistory.value = await saveAiPromptHistory(prompt);
+    aiPromptHistoryIndex.value = -1;
+    const plan = await generateAiActionPlan(workspaceState.value, prompt);
+    const validation = validateAiActionPlan(plan, workspaceState.value);
+    if (!validation.ok) {
+      aiError.value = validation.error;
+      return;
+    }
+
+    const enriched = enrichAiActionsForPrompt(
+      validation.actions,
+      workspaceState.value,
+      prompt,
+    );
+
+    aiActions.value = enriched.actions;
+    aiPreview.value = [...validation.preview, ...enriched.preview].length
+      ? [...validation.preview, ...enriched.preview]
+      : [{ type: "no_actions", risk: "normal" }];
+    aiPrompt.value = "";
+  } catch (error) {
+    aiError.value = error instanceof Error ? error.message : t("aiRequestFailed");
+  } finally {
+    aiLoading.value = false;
+  }
+}
+
+function updateAiShortcuts(shortcuts: AiPromptShortcut[]) {
+  aiShortcuts.value = shortcuts;
+}
+
+function addAiShortcut() {
+  aiShortcuts.value = [...aiShortcuts.value, createAiPromptShortcut()];
+}
+
+function deleteAiShortcut(shortcutId: string) {
+  aiShortcuts.value = aiShortcuts.value.filter((shortcut) => shortcut.id !== shortcutId);
+}
+
+function aiPreviewText(item: AiActionPreview) {
+  switch (item.type) {
+    case "rename_workspace":
+      return t("aiPreviewRenameWorkspace", item.values);
+    case "create_workspace":
+      return t("aiPreviewCreateWorkspace", item.values);
+    case "move_page":
+      return t("aiPreviewMovePage", item.values);
+    case "pin_page":
+      return item.values?.workspace
+        ? t("aiPreviewPinPage", item.values)
+        : t("aiPreviewPinPageNoWorkspace", item.values);
+    case "unpin_page":
+      return t("aiPreviewUnpinPage", item.values);
+    case "close_page":
+      return t("aiPreviewClosePage", item.values);
+    case "delete_workspace":
+      return t("aiPreviewDeleteWorkspace", item.values);
+    case "close_workspace_pages":
+      return t("aiPreviewCloseWorkspacePages", item.values);
+    case "rename_page":
+      return t("aiPreviewRenamePage", item.values);
+    case "no_actions":
+      return t("aiNoActions");
+  }
+}
+
+function selectAiPromptHistory(offset: number) {
+  if (aiPromptHistory.value.length === 0) return;
+
+  const nextIndex = Math.max(
+    -1,
+    Math.min(aiPromptHistoryIndex.value + offset, aiPromptHistory.value.length - 1),
+  );
+  aiPromptHistoryIndex.value = nextIndex;
+  aiPrompt.value = nextIndex === -1 ? "" : aiPromptHistory.value[nextIndex];
+}
+
+async function applyAiPlan() {
+  if (currentWindowId.value === undefined || aiActions.value.length === 0) return;
+
+  aiLoading.value = true;
+  aiError.value = "";
+  try {
+    const response = await sendMessage<{ ok?: boolean; error?: string }>({
+      type: "APPLY_AI_ACTIONS",
+      windowId: currentWindowId.value,
+      actions: aiActions.value,
+    });
+    if (response?.ok === false) {
+      aiError.value = response.error || t("aiApplyFailed");
+      return;
+    }
+    aiPreview.value = [];
+    aiActions.value = [];
+    await refreshTabs();
+  } catch (error) {
+    aiError.value = error instanceof Error ? error.message : t("aiApplyFailed");
+  } finally {
+    aiLoading.value = false;
+  }
+}
+
 onMounted(async () => {
   await refreshAll();
   await loadOnboardingState();
+  await refreshAiStatus();
+  aiShortcuts.value = await loadAiPromptShortcuts(locale);
 
   document.addEventListener("contextmenu", handleDocumentContextMenu);
   document.addEventListener("click", handleDocumentClick);
@@ -704,6 +936,97 @@ onUnmounted(() => {
       :new-workspace-label="t('newWorkspace')"
       @create-page="createPage"
       @create-workspace="createWorkspace"
+    />
+
+    <section
+      v-if="!isAiAvailable"
+      class="ai-debug-dock"
+      :class="{ open: isAiStatusOpen }"
+      aria-label="AI status"
+    >
+      <div v-if="isAiStatusOpen" class="ai-debug-panel">
+        <div class="ai-result-header">
+          <span class="ai-status">Chrome AI</span>
+          <button
+            type="button"
+            class="inline-icon-button"
+            title="Refresh AI status"
+            aria-label="Refresh AI status"
+            @click="refreshAiStatus"
+          >
+            ↻
+          </button>
+        </div>
+        <dl class="ai-debug-list">
+          <div>
+            <dt>LanguageModel</dt>
+            <dd>{{ aiStatus.supported ? "present" : "missing" }}</dd>
+          </div>
+          <div>
+            <dt>availability()</dt>
+            <dd>{{ aiStatus.availability }}</dd>
+          </div>
+          <div>
+            <dt>enabled</dt>
+            <dd>{{ aiStatus.enabled ? "yes" : "no" }}</dd>
+          </div>
+          <div v-if="aiStatus.checkedAt">
+            <dt>checked</dt>
+            <dd>{{ aiStatus.checkedAt }}</dd>
+          </div>
+        </dl>
+        <p v-if="aiStatus.error" class="ai-error">{{ aiStatus.error }}</p>
+      </div>
+
+      <button
+        class="icon-button floating-ai-button"
+        type="button"
+        title="AI status"
+        aria-label="AI status"
+        @click="toggleAiStatus"
+      >
+        AI
+      </button>
+    </section>
+
+    <AiActionDock
+      v-if="isAiAvailable"
+      v-model:prompt="aiPrompt"
+      :open="isAiDockOpen"
+      :preview="localizedAiPreview"
+      :error="aiError"
+      :loading="aiLoading"
+      :has-plan="aiActions.length > 0"
+      :prompt-preview="aiPromptPreview"
+      :shortcuts="aiShortcuts"
+      :labels="{
+        title: t('aiAction'),
+        prompt: t('aiPromptPlaceholder'),
+        save: t('save'),
+        apply: aiLoading ? t('aiApplying') : t('aiApply'),
+        cancel: t('cancel'),
+        confirm: t('confirm'),
+        settings: t('settings'),
+        promptInfo: t('aiPromptInfo'),
+        shortcuts: t('aiShortcuts'),
+        addShortcut: t('aiAddShortcut'),
+        shortcutTitle: t('aiShortcutTitle'),
+        shortcutPrompt: t('aiShortcutPrompt'),
+        builtInShortcut: t('aiBuiltInShortcut'),
+        deleteShortcut: t('aiDeleteShortcut'),
+      }"
+      @update:shortcuts="updateAiShortcuts"
+      @toggle="toggleAiDock"
+      @generate="generateAiPlan"
+      @run-shortcut="runAiShortcut"
+      @apply="applyAiPlan"
+      @clear-plan="clearAiPlan"
+      @cancel="closeAiDock"
+      @save-settings="saveAiSettings"
+      @add-shortcut="addAiShortcut"
+      @delete-shortcut="deleteAiShortcut"
+      @history-prev="selectAiPromptHistory(1)"
+      @history-next="selectAiPromptHistory(-1)"
     />
 
     <ConfirmDialog
