@@ -68,6 +68,10 @@ let scheduledRefreshId: number | undefined;
 
 const isPrimaryWindow = computed(() => windowContext.value?.role === "primary");
 const isWindowContextReady = computed(() => Boolean(windowContext.value));
+const showAiEntry = computed(() => (
+  aiStatus.value.supported
+  && !["missing", "unavailable", "error"].includes(aiStatus.value.availability)
+));
 const workspaces = computed(() =>
   [...workspaceState.value.workspaces].sort((a, b) => a.order - b.order),
 );
@@ -852,6 +856,7 @@ onUnmounted(() => {
     />
 
     <AiClassifierDock
+      v-if="showAiEntry"
       :available="isAiAvailable"
       :open="isAiPanelOpen"
       :suggestions="aiSuggestions"
