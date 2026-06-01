@@ -502,6 +502,10 @@ async function classifyUnmanagedPages() {
   selectedAiPageIds.value = [];
   await refreshAiStatus();
 
+  if (aiStatus.value.availability === "downloading") {
+    aiError.value = t("aiDownloading");
+    return;
+  }
   if (!isAiAvailable.value) return;
   if (workspaces.value.length === 0) {
     aiError.value = t("aiNoWorkspaces");

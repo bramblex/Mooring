@@ -43,9 +43,7 @@ export async function getBuiltInAiStatus(): Promise<BuiltInAiStatus> {
 
   try {
     const availability = await languageModel.availability();
-    const enabled = availability === "available"
-      || availability === "downloadable"
-      || availability === "downloading";
+    const enabled = availability === "available" || availability === "downloadable";
 
     return {
       supported: true,
