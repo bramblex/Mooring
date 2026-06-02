@@ -197,6 +197,7 @@ export class AppModel {
             };
         }
 
+        await this.recoverSingleWindowPrimary(windowId);
         const window = this.ensureWindow(windowId);
 
         return {
@@ -483,6 +484,15 @@ export class AppModel {
 
     private ensureWindow(id: number) {
         return this.findWindow(id) || this.createWindow(id, "temporary");
+    }
+
+    private async recoverSingleWindowPrimary(windowId: number) {
+        if (this.mainWindow || !await this.chromeWindowExists(windowId)) return;
+
+        const windows = await chrome.windows.getAll({ windowTypes: ["normal"] });
+        if (windows.length === 1 && windows[0].id === windowId) {
+            this.setPrimaryWindow(windowId);
+        }
     }
 
     private async isPrimaryWindowId(windowId?: number, recoverMissingPrimary = false) {
