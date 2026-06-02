@@ -587,7 +587,7 @@ input:focus-visible {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
-  gap: 0;
+  gap: 6px;
   min-height: 0;
 }
 
@@ -596,13 +596,10 @@ input:focus-visible {
   min-height: 0;
   max-height: 61.8%;
   overflow-y: auto;
-  padding-bottom: 4px;
 }
 
 .workspace-navigator {
-  position: sticky;
-  top: 0;
-  z-index: 15;
+  flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -610,7 +607,6 @@ input:focus-visible {
   padding: 6px;
   background: color-mix(in srgb, var(--color-bg) 92%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--color-surface-border) 70%, transparent);
-  backdrop-filter: blur(10px);
 }
 
 .workspace-nav-item {
@@ -1070,8 +1066,6 @@ h2 {
   flex: 1 1 auto;
   gap: 6px;
   min-height: 0;
-  margin-top: 6px;
-  scroll-margin-top: 108px;
   padding: 8px 0 66px;
   border-top: 1px solid var(--color-surface-border);
   overflow-y: auto;
