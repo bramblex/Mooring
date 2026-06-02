@@ -592,7 +592,7 @@ input:focus-visible {
 }
 
 .workspace-list {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
   max-height: 61.8%;
   overflow-y: auto;
