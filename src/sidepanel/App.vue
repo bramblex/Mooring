@@ -32,6 +32,10 @@ import {
 import AiClassifierDock from "./components/AiClassifierDock.vue";
 
 const ONBOARDING_STORAGE_KEY = "mooringOnboardingDismissed";
+const SCROLLABLE_SELECTOR = ".workspace-list, .unmanaged-section, .delete-history-popover";
+const OVERLAY_SCROLLBAR_CLASS = "overlay-scrollbar-thumb";
+const OVERLAY_SCROLLBAR_VISIBLE_CLASS = "visible";
+const OVERLAY_SCROLLBAR_HOVER_CLASS = "hovering";
 
 const workspaceState = ref<WorkspaceState>({
   workspaces: [],
@@ -65,6 +69,8 @@ const { confirmDialog, requestConfirm, closeConfirmDialog } = useConfirmDialog()
 const { pageTitle, pageSubtitle, pageFavicon } = usePageDisplay(t);
 let refreshRequestId = 0;
 let scheduledRefreshId: number | undefined;
+const scrollbarTimers = new Map<HTMLElement, number>();
+const scrollbarThumbs = new Map<HTMLElement, HTMLDivElement>();
 
 const isPrimaryWindow = computed(() => windowContext.value?.role === "primary");
 const isWindowContextReady = computed(() => Boolean(windowContext.value));
@@ -193,6 +199,90 @@ function handleDocumentClick(event: MouseEvent) {
   if (target instanceof HTMLElement && target.closest(".group-color-picker")) return;
 
   openColorPickerGroupId.value = null;
+}
+
+function scrollableTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement ? target.closest<HTMLElement>(SCROLLABLE_SELECTOR) : null;
+}
+
+function overlayScrollbarThumb(element: HTMLElement) {
+  const existingThumb = scrollbarThumbs.get(element);
+  if (existingThumb) return existingThumb;
+
+  const thumb = document.createElement("div");
+  thumb.className = OVERLAY_SCROLLBAR_CLASS;
+  document.body.appendChild(thumb);
+  scrollbarThumbs.set(element, thumb);
+  return thumb;
+}
+
+function updateOverlayScrollbar(element: HTMLElement) {
+  const thumb = overlayScrollbarThumb(element);
+  const scrollRange = element.scrollHeight - element.clientHeight;
+  if (scrollRange <= 0) {
+    thumb.classList.remove(OVERLAY_SCROLLBAR_VISIBLE_CLASS);
+    return;
+  }
+
+  const rect = element.getBoundingClientRect();
+  const thumbHeight = Math.max(24, rect.height * (element.clientHeight / element.scrollHeight));
+  const thumbTop = rect.top + (element.scrollTop / scrollRange) * (rect.height - thumbHeight);
+
+  thumb.style.left = `${rect.right - 5}px`;
+  thumb.style.top = `${thumbTop}px`;
+  thumb.style.height = `${thumbHeight}px`;
+  thumb.classList.add(OVERLAY_SCROLLBAR_VISIBLE_CLASS);
+}
+
+function hideOverlayScrollbar(element: HTMLElement) {
+  const thumb = scrollbarThumbs.get(element);
+  if (!thumb?.classList.contains(OVERLAY_SCROLLBAR_HOVER_CLASS)) {
+    thumb?.classList.remove(OVERLAY_SCROLLBAR_VISIBLE_CLASS);
+  }
+}
+
+function handleScrollableScroll(event: Event) {
+  const target = scrollableTarget(event.target);
+  if (!target) return;
+
+  updateOverlayScrollbar(target);
+  const previousTimer = scrollbarTimers.get(target);
+  if (previousTimer !== undefined) {
+    window.clearTimeout(previousTimer);
+  }
+
+  const nextTimer = window.setTimeout(() => {
+    hideOverlayScrollbar(target);
+    scrollbarTimers.delete(target);
+  }, 900);
+  scrollbarTimers.set(target, nextTimer);
+}
+
+function handleScrollablePointerOver(event: Event) {
+  const target = scrollableTarget(event.target);
+  if (!target) return;
+
+  const thumb = overlayScrollbarThumb(target);
+  thumb.classList.add(OVERLAY_SCROLLBAR_HOVER_CLASS);
+  updateOverlayScrollbar(target);
+}
+
+function handleScrollablePointerOut(event: Event) {
+  const target = scrollableTarget(event.target);
+  if (!target) return;
+  const relatedTarget = event instanceof MouseEvent ? event.relatedTarget : null;
+  if (relatedTarget instanceof HTMLElement && target.contains(relatedTarget)) return;
+
+  const thumb = scrollbarThumbs.get(target);
+  thumb?.classList.remove(OVERLAY_SCROLLBAR_HOVER_CLASS);
+  hideOverlayScrollbar(target);
+}
+
+function cleanupOverlayScrollbars() {
+  scrollbarTimers.forEach((timer) => window.clearTimeout(timer));
+  scrollbarTimers.clear();
+  scrollbarThumbs.forEach((thumb) => thumb.remove());
+  scrollbarThumbs.clear();
 }
 
 async function openMainWindowFromPanel() {
@@ -595,6 +685,9 @@ onMounted(async () => {
 
   document.addEventListener("contextmenu", handleDocumentContextMenu);
   document.addEventListener("click", handleDocumentClick);
+  document.addEventListener("scroll", handleScrollableScroll, true);
+  document.addEventListener("mouseover", handleScrollablePointerOver, true);
+  document.addEventListener("mouseout", handleScrollablePointerOut, true);
 
   chrome.tabs.onCreated.addListener(scheduleRefreshTabs);
   chrome.tabs.onUpdated.addListener(scheduleRefreshTabs);
@@ -622,6 +715,10 @@ onUnmounted(() => {
 
   document.removeEventListener("contextmenu", handleDocumentContextMenu);
   document.removeEventListener("click", handleDocumentClick);
+  document.removeEventListener("scroll", handleScrollableScroll, true);
+  document.removeEventListener("mouseover", handleScrollablePointerOver, true);
+  document.removeEventListener("mouseout", handleScrollablePointerOut, true);
+  cleanupOverlayScrollbars();
 
   chrome.tabs.onCreated.removeListener(scheduleRefreshTabs);
   chrome.tabs.onUpdated.removeListener(scheduleRefreshTabs);
@@ -726,81 +823,83 @@ onUnmounted(() => {
     </section>
 
     <section class="groups" :aria-label="t('openTabs')">
-      <!-- docs/product-logic.md: Mooring 管理的 Workspace 区域排在 Unmanaged 区域前面。 -->
-      <WorkspaceSection
-        v-for="(workspace, workspaceIndex) in workspaces"
-        :key="workspace.id"
-        :workspace="workspace"
-        :workspace-index="workspaceIndex"
-        :group-colors="GROUP_COLORS"
-        :drag-over-key="dragOverKey"
-        :dragged-workspace-id="draggedWorkspaceId"
-        :dragged-page-id="draggedPageId"
-        :editing-workspace-id="editingWorkspaceId"
-        :editing-bookmark-id="editingBookmarkId"
-        :open-color-picker-group-id="openColorPickerGroupId"
-        :labels="{
-          doubleClickToggleWorkspace: t('doubleClickToggleWorkspace'),
-          groupColor: t('groupColor'),
-          groupTitle: t('groupTitle'),
-          showWorkspace: t('showWorkspace'),
-          hideWorkspace: t('hideWorkspace'),
-          deleteWorkspace: t('deleteWorkspace'),
-          closeWorkspacePages: t('closeWorkspacePages'),
-          emptyWorkspaceDrop: t('emptyWorkspaceDrop'),
-          bookmarkTitle: t('bookmarkTitle'),
-          restorePinnedPage: t('restorePinnedPage'),
-          unpinPage: t('unpinPage'),
-          pinPage: t('pinPage'),
-          closePage: t('closePage'),
-        }"
-        :group-color-style="groupColorStyle"
-        :workspace-gap-key="workspaceGapKey"
-        :page-gap-key="pageGapKey"
-        :page-title="pageTitle"
-        :page-subtitle="pageSubtitle"
-        :page-favicon="pageFavicon"
-        :is-editing-workspace="isEditingWorkspace"
-        :is-editing-page="isEditingPage"
-        @workspace-gap-dragover="onWorkspaceGapDragOver"
-        @workspace-gap-dragleave="onDragLeave"
-        @workspace-gap-drop="onWorkspaceDrop"
-        @set-workspace-element="setWorkspaceSectionElement"
-        @workspace-section-dragover="onWorkspaceSectionDragOver"
-        @workspace-section-drop="onWorkspaceSectionDrop"
-        @workspace-dragstart="onWorkspaceDragStart"
-        @dragend="onDragEnd"
-        @toggle-workspace-from-header="toggleWorkspaceFromHeader"
-        @toggle-color-picker="toggleColorPicker"
-        @update-workspace-color="updateWorkspaceColor"
-        @set-workspace-title-input="setWorkspaceTitleInput"
-        @update-workspace-title="updateWorkspaceTitle"
-        @edit-workspace-title="editWorkspaceTitle"
-        @toggle-workspace="toggleWorkspace"
-        @delete-workspace="deleteWorkspace"
-        @close-workspace-pages="closeWorkspacePages"
-        @page-gap-dragover="onPageGapDragOver"
-        @page-gap-dragleave="onDragLeave"
-        @page-gap-drop="onPageGapDrop"
-        @page-item-dragover="onPageItemDragOver"
-        @page-item-drop="onPageItemDrop"
-        @page-dragstart="onPageDragStart"
-        @open-workspace-page="openWorkspacePage"
-        @set-page-title-input="setPageTitleInput"
-        @update-pinned-page-title="updatePinnedPageTitle"
-        @stop-input-drag="stopInputDrag"
-        @restore-pinned-page="restorePinnedPage"
-        @edit-pinned-page-title="editPinnedPageTitle"
-        @toggle-pinned-page="togglePinnedPage"
-        @close-workspace-page="closeWorkspacePage"
-      />
-      <div
-        class="workspace-drop-gap"
-        :class="{ active: dragOverKey === workspaceGapKey(workspaces.length) }"
-        @dragover="onWorkspaceGapDragOver(workspaces.length, $event)"
-        @dragleave="onDragLeave(workspaceGapKey(workspaces.length))"
-        @drop="onWorkspaceDrop(workspaces.length, $event)"
-      ></div>
+      <div class="workspace-list">
+        <!-- docs/product-logic.md: Mooring 管理的 Workspace 区域排在 Unmanaged 区域前面。 -->
+        <WorkspaceSection
+          v-for="(workspace, workspaceIndex) in workspaces"
+          :key="workspace.id"
+          :workspace="workspace"
+          :workspace-index="workspaceIndex"
+          :group-colors="GROUP_COLORS"
+          :drag-over-key="dragOverKey"
+          :dragged-workspace-id="draggedWorkspaceId"
+          :dragged-page-id="draggedPageId"
+          :editing-workspace-id="editingWorkspaceId"
+          :editing-bookmark-id="editingBookmarkId"
+          :open-color-picker-group-id="openColorPickerGroupId"
+          :labels="{
+            doubleClickToggleWorkspace: t('doubleClickToggleWorkspace'),
+            groupColor: t('groupColor'),
+            groupTitle: t('groupTitle'),
+            showWorkspace: t('showWorkspace'),
+            hideWorkspace: t('hideWorkspace'),
+            deleteWorkspace: t('deleteWorkspace'),
+            closeWorkspacePages: t('closeWorkspacePages'),
+            emptyWorkspaceDrop: t('emptyWorkspaceDrop'),
+            bookmarkTitle: t('bookmarkTitle'),
+            restorePinnedPage: t('restorePinnedPage'),
+            unpinPage: t('unpinPage'),
+            pinPage: t('pinPage'),
+            closePage: t('closePage'),
+          }"
+          :group-color-style="groupColorStyle"
+          :workspace-gap-key="workspaceGapKey"
+          :page-gap-key="pageGapKey"
+          :page-title="pageTitle"
+          :page-subtitle="pageSubtitle"
+          :page-favicon="pageFavicon"
+          :is-editing-workspace="isEditingWorkspace"
+          :is-editing-page="isEditingPage"
+          @workspace-gap-dragover="onWorkspaceGapDragOver"
+          @workspace-gap-dragleave="onDragLeave"
+          @workspace-gap-drop="onWorkspaceDrop"
+          @set-workspace-element="setWorkspaceSectionElement"
+          @workspace-section-dragover="onWorkspaceSectionDragOver"
+          @workspace-section-drop="onWorkspaceSectionDrop"
+          @workspace-dragstart="onWorkspaceDragStart"
+          @dragend="onDragEnd"
+          @toggle-workspace-from-header="toggleWorkspaceFromHeader"
+          @toggle-color-picker="toggleColorPicker"
+          @update-workspace-color="updateWorkspaceColor"
+          @set-workspace-title-input="setWorkspaceTitleInput"
+          @update-workspace-title="updateWorkspaceTitle"
+          @edit-workspace-title="editWorkspaceTitle"
+          @toggle-workspace="toggleWorkspace"
+          @delete-workspace="deleteWorkspace"
+          @close-workspace-pages="closeWorkspacePages"
+          @page-gap-dragover="onPageGapDragOver"
+          @page-gap-dragleave="onDragLeave"
+          @page-gap-drop="onPageGapDrop"
+          @page-item-dragover="onPageItemDragOver"
+          @page-item-drop="onPageItemDrop"
+          @page-dragstart="onPageDragStart"
+          @open-workspace-page="openWorkspacePage"
+          @set-page-title-input="setPageTitleInput"
+          @update-pinned-page-title="updatePinnedPageTitle"
+          @stop-input-drag="stopInputDrag"
+          @restore-pinned-page="restorePinnedPage"
+          @edit-pinned-page-title="editPinnedPageTitle"
+          @toggle-pinned-page="togglePinnedPage"
+          @close-workspace-page="closeWorkspacePage"
+        />
+        <div
+          class="workspace-drop-gap"
+          :class="{ active: dragOverKey === workspaceGapKey(workspaces.length) }"
+          @dragover="onWorkspaceGapDragOver(workspaces.length, $event)"
+          @dragleave="onDragLeave(workspaceGapKey(workspaces.length))"
+          @drop="onWorkspaceDrop(workspaces.length, $event)"
+        ></div>
+      </div>
 
       <!-- docs/product-logic.md: Unmanaged 区域显示未被 Mooring 管理的 Chrome Tab 或 Chrome Group。 -->
       <UnmanagedSection

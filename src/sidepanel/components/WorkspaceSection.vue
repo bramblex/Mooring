@@ -93,7 +93,10 @@ defineEmits<{
   <section
     class="group-section"
     :ref="(element) => $emit('setWorkspaceElement', props.workspace.id, element)"
-    :class="{ dragging: props.draggedWorkspaceId === props.workspace.id }"
+    :class="{
+      collapsed: props.workspace.collapsed,
+      dragging: props.draggedWorkspaceId === props.workspace.id,
+    }"
     :style="props.groupColorStyle(props.workspace.color)"
     @dragover="$emit('workspaceSectionDragover', props.workspaceIndex, $event)"
     @drop="$emit('workspaceSectionDrop', props.workspaceIndex, $event)"
