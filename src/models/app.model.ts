@@ -4,6 +4,8 @@ import { UnmanagedModel } from "./unmanaged.model";
 import { WorkspaceModel, type TabGroupColor } from "./workspace.model";
 import { WorkspaceRuntimeStore } from "./workspace.runtime";
 
+const MAIN_WINDOW_SESSION_STORAGE_KEY = "mooringMainWindowId";
+
 type AppMessage = { windowId?: number } & (
     | {
         type: "GET_WINDOW_CONTEXT";
@@ -148,6 +150,7 @@ export class AppModel {
     workspace = new WorkspaceModel(this.runtime);
     unmanaged = new UnmanagedModel(this.runtime);
     deleteHistory = new DeleteHistoryModel();
+    private runtimeLoaded = false;
 
     constructor() {
     }
@@ -162,15 +165,22 @@ export class AppModel {
         const existingWindow = this.findWindow(id);
         if (existingWindow) {
             if (role) existingWindow.role = role;
+            if (existingWindow.role === "primary") {
+                void this.persistMainWindowId(existingWindow.id);
+            }
             return existingWindow;
         }
 
         const window = new WindowModel(id, role || this.nextWindowRole());
         this.windows.push(window);
+        if (window.role === "primary") {
+            void this.persistMainWindowId(window.id);
+        }
         return window;
     }
 
     async initialize(seedWindowId?: number) {
+        await this.ensureRuntimeLoaded();
         await this.ensureMainWindowIsValid();
         if (this.mainWindow) return;
 
@@ -186,6 +196,7 @@ export class AppModel {
     }
 
     async getWindowContext(windowId?: number): Promise<WindowContext> {
+        await this.ensureRuntimeLoaded();
         await this.ensureMainWindowIsValid();
 
         if (!windowId) {
@@ -209,6 +220,7 @@ export class AppModel {
     }
 
     async openMainWindow() {
+        await this.ensureRuntimeLoaded();
         const mainWindow = await this.ensureMainWindow();
         if (!mainWindow) {
             return;
@@ -218,6 +230,7 @@ export class AppModel {
     }
 
     async sendCurrentTabToMainWindow(windowId?: number) {
+        await this.ensureRuntimeLoaded();
         if (!windowId) {
             return;
         }
@@ -235,6 +248,7 @@ export class AppModel {
     }
 
     async sendAllTabsToMainWindow(windowId?: number) {
+        await this.ensureRuntimeLoaded();
         if (!windowId) {
             return;
         }
@@ -246,6 +260,7 @@ export class AppModel {
     }
 
     async sendTabsToMainWindow(tabIds: number[]) {
+        await this.ensureRuntimeLoaded();
         if (tabIds.length === 0) {
             return;
         }
@@ -264,6 +279,7 @@ export class AppModel {
     }
 
     async getWorkspaceState(windowId: number) {
+        await this.ensureRuntimeLoaded();
         if (!await this.isPrimaryWindowId(windowId, true)) {
             return { workspaces: [], unmanagedPages: [], unmanagedGroups: [] };
         }
@@ -284,6 +300,8 @@ export class AppModel {
     }
 
     start() {
+        void this.ensureRuntimeLoaded();
+
         chrome.runtime.onInstalled.addListener(async (details) => {
             await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
             if (details.reason === "install") {
@@ -324,6 +342,8 @@ export class AppModel {
     }
 
     private async handleMessage(message: AppMessage) {
+        await this.ensureRuntimeLoaded();
+
         const canRecoverPrimaryWindow = message.type === "GET_WORKSPACE_STATE";
         if (this.requiresPrimaryWindow(message.type) && !await this.isPrimaryWindowId(message.windowId, canRecoverPrimaryWindow)) {
             if (message.type === "GET_WORKSPACE_STATE") {
@@ -447,6 +467,8 @@ export class AppModel {
     }
 
     private async ensureMainWindowIsValid() {
+        await this.ensureRuntimeLoaded();
+
         const mainWindow = this.mainWindow;
 
         if (mainWindow) {
@@ -458,6 +480,8 @@ export class AppModel {
             }
         }
 
+        if (await this.restoreMainWindowFromSession()) return;
+
         const projectedWindowId = await this.workspace.findProjectedWindowId();
         if (projectedWindowId !== undefined && await this.chromeWindowExists(projectedWindowId)) {
             this.setPrimaryWindow(projectedWindowId);
@@ -465,6 +489,7 @@ export class AppModel {
     }
 
     private async ensureMainWindow() {
+        await this.ensureRuntimeLoaded();
         await this.ensureMainWindowIsValid();
 
         if (this.mainWindow) return this.mainWindow;
@@ -474,6 +499,7 @@ export class AppModel {
     }
 
     private async openSidePanelFromAction(windowId: number) {
+        await this.ensureRuntimeLoaded();
         await this.ensureMainWindowIsValid();
         if (!this.mainWindow) {
             this.setPrimaryWindow(windowId);
@@ -487,6 +513,7 @@ export class AppModel {
     }
 
     private async recoverSingleWindowPrimary(windowId: number) {
+        await this.ensureRuntimeLoaded();
         if (this.mainWindow || !await this.chromeWindowExists(windowId)) return;
 
         const windows = await chrome.windows.getAll({ windowTypes: ["normal"] });
@@ -496,6 +523,7 @@ export class AppModel {
     }
 
     private async isPrimaryWindowId(windowId?: number, recoverMissingPrimary = false) {
+        await this.ensureRuntimeLoaded();
         if (!windowId || !await this.chromeWindowExists(windowId)) return false;
 
         await this.ensureMainWindowIsValid();
@@ -509,8 +537,17 @@ export class AppModel {
     }
 
     private async registerCreatedWindow(id?: number) {
+        await this.ensureRuntimeLoaded();
         await this.ensureMainWindowIsValid();
         this.createWindow(id);
+    }
+
+    private async ensureRuntimeLoaded() {
+        if (this.runtimeLoaded) return;
+
+        await this.runtime.ensureLoaded();
+        await this.restoreMainWindowFromSession();
+        this.runtimeLoaded = true;
     }
 
     private setPrimaryWindow(id: number) {
@@ -533,6 +570,30 @@ export class AppModel {
         }
     }
 
+    private async restoreMainWindowFromSession() {
+        const stored = await chrome.storage.session.get(MAIN_WINDOW_SESSION_STORAGE_KEY);
+        const windowId = stored[MAIN_WINDOW_SESSION_STORAGE_KEY];
+        if (typeof windowId !== "number") return false;
+
+        if (await this.chromeWindowExists(windowId)) {
+            this.setPrimaryWindow(windowId);
+            return true;
+        }
+
+        await this.clearMainWindowId();
+        return false;
+    }
+
+    private async persistMainWindowId(windowId: number) {
+        await chrome.storage.session.set({
+            [MAIN_WINDOW_SESSION_STORAGE_KEY]: windowId,
+        });
+    }
+
+    private async clearMainWindowId() {
+        await chrome.storage.session.remove(MAIN_WINDOW_SESSION_STORAGE_KEY);
+    }
+
     private findWindow(id: number) {
         return this.windows.find((window) => window.id === id);
     }
@@ -545,6 +606,7 @@ export class AppModel {
             // docs/window-model.md: 主窗口关闭后清空 Workspace / Page 与
             // Chrome Group / Chrome Tab 的 runtime binding，Bookmark 保留。
             this.workspace.clearRuntimeBindings();
+            void this.clearMainWindowId();
         }
     }
 
