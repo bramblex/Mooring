@@ -117,11 +117,17 @@ function isEditableElement(target: EventTarget | null) {
 }
 
 async function sendMessage<T>(message: Record<string, unknown>) {
-  return chrome.runtime.sendMessage(message) as Promise<T>;
+  const scopedMessage = currentWindowId.value === undefined || "windowId" in message
+    ? message
+    : { ...message, windowId: currentWindowId.value };
+  return chrome.runtime.sendMessage(scopedMessage) as Promise<T>;
 }
 
 async function refreshTabs() {
-  if (!isPrimaryWindow.value || currentWindowId.value === undefined) return;
+  if (!isPrimaryWindow.value || currentWindowId.value === undefined) {
+    workspaceState.value = { workspaces: [], unmanagedPages: [], unmanagedGroups: [] };
+    return;
+  }
 
   const requestId = ++refreshRequestId;
   const nextState = await sendMessage<WorkspaceState>({

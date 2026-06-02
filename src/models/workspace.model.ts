@@ -91,6 +91,61 @@ export class WorkspaceModel {
     return workspaces;
   }
 
+  async findProjectedWindowId() {
+    await this.runtime.ensureLoaded();
+
+    const root = await ensureRootFolder();
+    const folders = await listWorkspaceFolders(root.id);
+    if (folders.length === 0) return undefined;
+
+    const groups = await chrome.tabGroups.query({});
+    this.runtime.pruneGroups(groups);
+
+    const foldersById = new Map(folders.map((folder) => [folder.id, folder]));
+    const storedBindingWindowScores = new Map<number, number>();
+
+    for (const [workspaceId, groupId] of this.runtime.workspaceGroupIds.entries()) {
+      const folder = foldersById.get(workspaceId);
+      const group = groups.find((item) => item.id === groupId);
+      if (!folder || !group) {
+        this.runtime.workspaceGroupIds.delete(workspaceId);
+        this.runtime.groupWorkspaceIds.delete(groupId);
+        continue;
+      }
+
+      const matchesFolder = this.workspaceMatchKey(group.title || "", group.color)
+        === this.workspaceMatchKey(folder.name, folder.color);
+      if (!matchesFolder) {
+        this.runtime.workspaceGroupIds.delete(workspaceId);
+        this.runtime.groupWorkspaceIds.delete(groupId);
+        continue;
+      }
+
+      storedBindingWindowScores.set(group.windowId, (storedBindingWindowScores.get(group.windowId) || 0) + 1);
+    }
+
+    if (storedBindingWindowScores.size > 0) {
+      void this.runtime.persist();
+      return this.bestScoredWindowId(storedBindingWindowScores);
+    }
+
+    const matchedWindowScores = new Map<number, number>();
+    const unmatchedGroups = [...groups];
+
+    for (const folder of folders) {
+      const matchIndex = unmatchedGroups.findIndex((group) =>
+        this.workspaceMatchKey(group.title || "", group.color) === this.workspaceMatchKey(folder.name, folder.color)
+      );
+      if (matchIndex < 0) continue;
+
+      const [group] = unmatchedGroups.splice(matchIndex, 1);
+      this.runtime.bindWorkspace(folder.id, group.id);
+      matchedWindowScores.set(group.windowId, (matchedWindowScores.get(group.windowId) || 0) + 1);
+    }
+
+    return this.bestScoredWindowId(matchedWindowScores);
+  }
+
   async createWorkspace(windowId: number) {
     await this.runtime.ensureLoaded();
 
@@ -310,6 +365,27 @@ export class WorkspaceModel {
 
   private workspaceMatchKey(name: string, color: TabGroupColor) {
     return `${color}:${name}`;
+  }
+
+  private bestScoredWindowId(scores: Map<number, number>) {
+    let bestWindowId: number | undefined;
+    let bestScore = 0;
+    let tied = false;
+
+    for (const [windowId, score] of scores.entries()) {
+      if (score > bestScore) {
+        bestWindowId = windowId;
+        bestScore = score;
+        tied = false;
+        continue;
+      }
+
+      if (score === bestScore) {
+        tied = true;
+      }
+    }
+
+    return tied ? undefined : bestWindowId;
   }
 
   private async ensureWorkspaceGroup(workspaceId: string, seedTabId: number) {

@@ -4,7 +4,7 @@ import { UnmanagedModel } from "./unmanaged.model";
 import { WorkspaceModel, type TabGroupColor } from "./workspace.model";
 import { WorkspaceRuntimeStore } from "./workspace.runtime";
 
-type AppMessage =
+type AppMessage = { windowId?: number } & (
     | {
         type: "GET_WINDOW_CONTEXT";
         windowId?: number;
@@ -137,7 +137,7 @@ type AppMessage =
         workspaceId: string;
         index: number;
     }
-    ;
+    );
 
 export class AppModel {
 
@@ -160,7 +160,10 @@ export class AppModel {
         if (!id) return;
 
         const existingWindow = this.findWindow(id);
-        if (existingWindow) return existingWindow;
+        if (existingWindow) {
+            if (role) existingWindow.role = role;
+            return existingWindow;
+        }
 
         const window = new WindowModel(id, role || this.nextWindowRole());
         this.windows.push(window);
@@ -255,6 +258,10 @@ export class AppModel {
     }
 
     async getWorkspaceState(windowId: number) {
+        if (!await this.isPrimaryWindowId(windowId)) {
+            return { workspaces: [], unmanagedPages: [], unmanagedGroups: [] };
+        }
+
         // docs/service-sidepanel-communication.md: WorkspaceState 是 side panel
         // 渲染快照，由 managed Workspace 和 unmanaged Chrome 状态组合而成。
         // docs/workspace-model.md: 生成 Workspace 快照时会先按名称和颜色恢复
@@ -271,8 +278,6 @@ export class AppModel {
     }
 
     start() {
-        void this.initialize();
-
         chrome.runtime.onInstalled.addListener(async (details) => {
             await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
             if (details.reason === "install") {
@@ -283,6 +288,7 @@ export class AppModel {
 
         chrome.runtime.onStartup.addListener(() => {
             this.workspace.markRuntimeBindingsRebuildNeeded();
+            void this.initialize();
         });
 
         chrome.action.onClicked.addListener(async (tab) => {
@@ -291,7 +297,7 @@ export class AppModel {
         });
 
         chrome.windows.onCreated.addListener((window) => {
-            this.createWindow(window.id);
+            void this.registerCreatedWindow(window.id);
         });
 
         chrome.windows.onRemoved.addListener((windowId) => {
@@ -312,6 +318,13 @@ export class AppModel {
     }
 
     private async handleMessage(message: AppMessage) {
+        if (this.requiresPrimaryWindow(message.type) && !await this.isPrimaryWindowId(message.windowId)) {
+            if (message.type === "GET_WORKSPACE_STATE") {
+                return { workspaces: [], unmanagedPages: [], unmanagedGroups: [] };
+            }
+            return { ok: false, error: "Workspace actions are only available in the main window." };
+        }
+
         switch (message.type) {
             case "GET_WINDOW_CONTEXT":
                 return this.getWindowContext(message.windowId);
@@ -428,14 +441,19 @@ export class AppModel {
 
     private async ensureMainWindowIsValid() {
         const mainWindow = this.mainWindow;
-        if (!mainWindow) {
-            return;
+
+        if (mainWindow) {
+            try {
+                await chrome.windows.get(mainWindow.id);
+                return;
+            } catch {
+                this.removeWindow(mainWindow.id);
+            }
         }
 
-        try {
-            await chrome.windows.get(mainWindow.id);
-        } catch {
-            this.removeWindow(mainWindow.id);
+        const projectedWindowId = await this.workspace.findProjectedWindowId();
+        if (projectedWindowId !== undefined && await this.chromeWindowExists(projectedWindowId)) {
+            this.setPrimaryWindow(projectedWindowId);
         }
     }
 
@@ -450,6 +468,38 @@ export class AppModel {
 
     private ensureWindow(id: number) {
         return this.findWindow(id) || this.createWindow(id, "temporary");
+    }
+
+    private async isPrimaryWindowId(windowId?: number) {
+        if (!windowId || !await this.chromeWindowExists(windowId)) return false;
+
+        await this.ensureMainWindowIsValid();
+        return this.mainWindow?.id === windowId;
+    }
+
+    private async registerCreatedWindow(id?: number) {
+        await this.ensureMainWindowIsValid();
+        this.createWindow(id);
+    }
+
+    private setPrimaryWindow(id: number) {
+        const window = this.createWindow(id, "primary");
+        this.windows.forEach((item) => {
+            if (item.id !== id && item.role === "primary") {
+                item.role = "temporary";
+            }
+        });
+        return window;
+    }
+
+    private async chromeWindowExists(id: number) {
+        try {
+            await chrome.windows.get(id);
+            return true;
+        } catch {
+            this.removeWindow(id);
+            return false;
+        }
     }
 
     private findWindow(id: number) {
@@ -469,5 +519,13 @@ export class AppModel {
 
     private nextWindowRole(): WindowRole {
         return this.mainWindow ? "temporary" : "primary";
+    }
+
+    private requiresPrimaryWindow(type: AppMessage["type"]) {
+        return type !== "GET_WINDOW_CONTEXT"
+            && type !== "OPEN_MAIN_WINDOW"
+            && type !== "SEND_CURRENT_TAB_TO_MAIN_WINDOW"
+            && type !== "SEND_ALL_TABS_TO_MAIN_WINDOW"
+            && type !== "GET_DELETE_HISTORY";
     }
 }

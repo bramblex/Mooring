@@ -11,7 +11,7 @@ export type WindowContext = {
 
 export class WindowModel {
   readonly id: number;
-  readonly role: WindowRole;
+  role: WindowRole;
 
   // 只有主窗口才会有工作区
   workspaces: WorkspaceModel[] = [];
