@@ -263,7 +263,7 @@ export class AppModel {
     }
 
     async getWorkspaceState(windowId: number) {
-        if (!await this.isPrimaryWindowId(windowId)) {
+        if (!await this.isPrimaryWindowId(windowId, true)) {
             return { workspaces: [], unmanagedPages: [], unmanagedGroups: [] };
         }
 
@@ -323,7 +323,8 @@ export class AppModel {
     }
 
     private async handleMessage(message: AppMessage) {
-        if (this.requiresPrimaryWindow(message.type) && !await this.isPrimaryWindowId(message.windowId)) {
+        const canRecoverPrimaryWindow = message.type === "GET_WORKSPACE_STATE";
+        if (this.requiresPrimaryWindow(message.type) && !await this.isPrimaryWindowId(message.windowId, canRecoverPrimaryWindow)) {
             if (message.type === "GET_WORKSPACE_STATE") {
                 return { workspaces: [], unmanagedPages: [], unmanagedGroups: [] };
             }
@@ -484,10 +485,16 @@ export class AppModel {
         return this.findWindow(id) || this.createWindow(id, "temporary");
     }
 
-    private async isPrimaryWindowId(windowId?: number) {
+    private async isPrimaryWindowId(windowId?: number, recoverMissingPrimary = false) {
         if (!windowId || !await this.chromeWindowExists(windowId)) return false;
 
         await this.ensureMainWindowIsValid();
+        if (!this.mainWindow && recoverMissingPrimary) {
+            const knownWindow = this.findWindow(windowId);
+            if (!knownWindow || knownWindow.role === "primary") {
+                this.setPrimaryWindow(windowId);
+            }
+        }
         return this.mainWindow?.id === windowId;
     }
 
