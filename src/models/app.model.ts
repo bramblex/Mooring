@@ -170,14 +170,19 @@ export class AppModel {
         return window;
     }
 
-    async initialize() {
+    async initialize(seedWindowId?: number) {
         await this.ensureMainWindowIsValid();
         if (this.mainWindow) return;
 
-        // docs/window-model.md: 首次安装或初始化时，如果没有主窗口，
-        // 当前窗口成为主窗口；主窗口 ID 只保存在运行时内存。
-        const currentWindow = await chrome.windows.getCurrent();
-        this.createWindow(currentWindow.id, "primary");
+        if (seedWindowId !== undefined && await this.chromeWindowExists(seedWindowId)) {
+            this.setPrimaryWindow(seedWindowId);
+            return;
+        }
+
+        const windows = await chrome.windows.getAll({ windowTypes: ["normal"] });
+        if (windows.length === 1 && windows[0].id !== undefined) {
+            this.setPrimaryWindow(windows[0].id);
+        }
     }
 
     async getWindowContext(windowId?: number): Promise<WindowContext> {
@@ -293,7 +298,7 @@ export class AppModel {
 
         chrome.action.onClicked.addListener(async (tab) => {
             if (!tab.windowId) return;
-            await chrome.sidePanel.open({ windowId: tab.windowId });
+            await this.openSidePanelFromAction(tab.windowId);
         });
 
         chrome.windows.onCreated.addListener((window) => {
@@ -464,6 +469,15 @@ export class AppModel {
 
         const chromeWindow = await chrome.windows.create({ focused: true });
         return this.createWindow(chromeWindow?.id, "primary");
+    }
+
+    private async openSidePanelFromAction(windowId: number) {
+        await this.ensureMainWindowIsValid();
+        if (!this.mainWindow) {
+            this.setPrimaryWindow(windowId);
+        }
+
+        await chrome.sidePanel.open({ windowId });
     }
 
     private ensureWindow(id: number) {
