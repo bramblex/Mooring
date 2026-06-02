@@ -1,6 +1,6 @@
 {
   "name": "mooring-workspaces",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Lightweight side panel workspaces for Chrome tabs, groups, and bookmark-backed pinned pages.",
   "private": true,
   "type": "module",
