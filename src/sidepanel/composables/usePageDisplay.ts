@@ -10,7 +10,10 @@ export function usePageDisplay(t: (key: "untitledPage") => string) {
   }
 
   function pageFavicon(page: PageModel) {
-    return page.favIconUrl || "";
+    if (page.favIconUrl) return page.favIconUrl;
+    if (!page.url) return "";
+
+    return chrome.runtime.getURL(`/_favicon/?pageUrl=${encodeURIComponent(page.url)}&size=32`);
   }
 
   return {
