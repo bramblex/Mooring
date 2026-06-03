@@ -80,6 +80,10 @@ defineEmits<{
   togglePinnedPage: [workspace: WorkspaceView, page: PageModel];
   closeWorkspacePage: [page: PageModel];
 }>();
+
+function workspaceOpenPageCount(workspace: WorkspaceView) {
+  return workspace.pages.filter((page) => page.open).length;
+}
 </script>
 
 <template>
@@ -154,6 +158,12 @@ defineEmits<{
         >
         <div v-else class="editable-title-wrap">
           <h2 class="group-title-text">{{ props.workspace.name }}</h2>
+          <span
+            v-if="workspaceOpenPageCount(props.workspace) > 0"
+            class="group-title-count"
+          >
+            {{ workspaceOpenPageCount(props.workspace) }}
+          </span>
           <button
             class="inline-icon-button edit-inline-button"
             type="button"

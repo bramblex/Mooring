@@ -876,9 +876,29 @@ h2 {
   white-space: nowrap;
 }
 
+.group-title-count {
+  flex: 0 0 auto;
+  min-width: 16px;
+  border-radius: 999px;
+  padding: 0 5px;
+  color: var(--color-muted);
+  background: color-mix(in srgb, var(--group-color) 14%, transparent);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
 .group-section.collapsed .group-title-text {
   font-size: 13px;
   font-weight: 700;
+}
+
+.group-section.collapsed .group-title-count {
+  min-width: 14px;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 14px;
 }
 
 .group-section.collapsed .icon-button.ghost {
